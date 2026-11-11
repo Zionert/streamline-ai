@@ -23,7 +23,10 @@ Read `CLAUDE.md` and, when needed, `docs/ARCHITECTURE.md` / `docs/DECISIONS.md`.
 4. **Tests** — do tests exist for the new logic and do they verify behaviour (not just "renders")?
 5. **Quality** — strict TS without `any`, clear names, duplication, dead code.
 6. **Scope** — nothing done outside the task.
-7. **Privacy** — no mention of Claude/AI/agents in any file tracked by the main repo. Violation = BLOCKER.
+7. **Privacy** — no mention of Claude, Claude Code, development agents, `.claude/` or `CLAUDE.md` in any
+   file tracked by the main repo, nor any hint that the code was AI-generated. Violation = BLOCKER.
+   The product's own AI assistant feature (WF-AI, ADR-021) is allowed and is not a violation.
+8. **Requirements** — behaviour and permissions match `docs/REQUIREMENTS.md` (role matrix, requirement IDs).
 
 Run the checks yourself: `pnpm lint && pnpm typecheck && pnpm test`. Failure = BLOCKER.
 

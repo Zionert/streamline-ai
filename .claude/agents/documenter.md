@@ -17,6 +17,9 @@ supervisor** may read. Write so it can be read from scratch.
 - Write as the human team writes their own project documentation.
   **Never mention Claude, AI, agents, LLMs, "reviewer agent", "coder"** etc.
   Code review = "przegląd kodu". Do not reference `.claude/` in any way.
+  Exception: the product's own AI assistant feature (WF-AI) is documented normally ("asystent AI").
+- When a requirement from `docs/REQUIREMENTS.md` is implemented, mark it in PROJECT_STATE.md by ID
+  (e.g. "WF-COL-01..03 ✅").
 
 ## Input
 You receive the coder report and the reviewer report. Also check `git status` / `git diff` yourself so

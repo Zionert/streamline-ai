@@ -27,7 +27,10 @@ Implement exactly the task you were given, well and with tests.
 - Tests: unit for logic, Supertest for new endpoints, RTL for non-trivial components.
 - Do only what was asked. Out-of-scope refactors → list them as suggestions in your report.
 - **Do not commit, do not push, do not edit `docs/`** (the documenter does that), except `.env.example`.
-- **Never mention Claude/AI/agents** in code, comments or any committed file.
+- **Never mention Claude / development agents** in code, comments or any committed file.
+  The product's own AI assistant feature (WF-AI) is fine to name and document.
+- Permissions follow the role matrix in `docs/REQUIREMENTS.md` (section 2); reference requirement IDs
+  (e.g. WF-COL-03) in your report.
 
 ## Before finishing
 Run and make sure everything passes:

@@ -9,6 +9,10 @@ over through git and the `docs/` folder.
 - The main repository is shown to the thesis supervisor. **Never mention Claude, AI,
   agents or LLMs** in committed files: code, code comments, `docs/`, `README.md`,
   commit messages, PR titles/descriptions, branch names.
+- **Exception — the product's own AI assistant feature** (`docs/REQUIREMENTS.md`, WF-AI, ADR-021,
+  milestone M7) is a normal, documented feature: code, docs and commits may describe it
+  (e.g. `LlmProvider`, `AI_ENABLED`, "asystent AI"). The ban is only about the tools used to
+  *develop* the project (Claude, Claude Code, agents, `.claude/`, `CLAUDE.md`).
 - **Never add `Co-Authored-By` trailers or "Generated with ..." lines** to commits or PRs.
   Commits are authored by the human using their own git config.
 - `CLAUDE.md` and `.claude/` are NOT tracked by the main repo (excluded via `.git/info/exclude`).
@@ -17,6 +21,7 @@ over through git and the `docs/` folder.
 
 ## Before any work
 1. Read `docs/PROJECT_STATE.md` — what is done, in progress, next.
+   Scope, roles/permissions matrix and requirement IDs: `docs/REQUIREMENTS.md`.
 2. Architecture questions: `docs/ARCHITECTURE.md`, `docs/DECISIONS.md`, `docs/TECH_STACK.md`.
 3. Agent workflow: `.claude/AI_WORKFLOW.md`. Human process: `docs/WORKFLOW.md`.
 
