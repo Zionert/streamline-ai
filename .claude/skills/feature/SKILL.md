@@ -42,3 +42,7 @@ Call the `documenter` agent with: brief + final coder report + final reviewer re
 - Proposed commit message (Conventional Commits, English, **no Co-Authored-By, no AI mention**).
 - **Do not commit on your own** — ask for permission. When committing, use the user's git identity
   as is and a plain message.
+- On permission, commit to **both** repos:
+  1. main repo: code only (`docs/`, `CLAUDE.md`, `.claude/` are excluded automatically);
+  2. private repo: `git --git-dir=.git-ai --work-tree=. add docs CLAUDE.md .claude` →
+     commit (e.g. `docs: <task>`) → push when the user asks to push.

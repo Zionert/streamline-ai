@@ -8,16 +8,16 @@ The main repo never sees these files.
 
 ```
 streamline/                 ← working folder
-├─ .git/                    ← MAIN repo (GitHub: streamline) — code + docs (Polish)
-├─ .git-ai/                 ← AI CONFIG repo (GitHub: streamline-ai, private) — CLAUDE.md + .claude/
+├─ .git/                    ← MAIN repo (GitHub: streamline) — code + public README
+├─ .git-ai/                 ← PRIVATE repo (GitHub: streamline-ai) — CLAUDE.md + .claude/ + docs/
 ├─ CLAUDE.md                ┐ tracked only by .git-ai
 ├─ .claude/                 ┘ (main repo ignores them via .git/info/exclude — NOT .gitignore)
 ├─ apps/ packages/ docs/ …  ← tracked only by .git
 ```
 
-- Main repo: `.git/info/exclude` contains `CLAUDE.md`, `.claude/`, `.git-ai/`.
+- Main repo: `.git/info/exclude` contains `CLAUDE.md`, `.claude/`, `.git-ai/`, `docs/`.
   This file is local and never pushed, so nothing in the main repo hints at Claude.
-- AI repo: `.git-ai/info/exclude` contains `/*` plus `!/CLAUDE.md` and `!/.claude/`,
+- AI repo: `.git-ai/info/exclude` contains `/*` plus `!/CLAUDE.md`, `!/.claude/` and `!/docs/`,
   so it tracks only the AI files.
 
 ### Everyday commands
@@ -41,10 +41,10 @@ git --git-dir=.git-ai config core.worktree ..
 git --git-dir=.git-ai config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
 git --git-dir=.git-ai fetch -q origin && git --git-dir=.git-ai branch -u origin/main main
 git --git-dir=.git-ai --work-tree=. checkout -f main
-printf '/*\n!/CLAUDE.md\n!/.claude/\n' > .git-ai/info/exclude
-printf 'CLAUDE.md\n.claude/\n.git-ai/\n' >> .git/info/exclude
+printf '/*\n!/CLAUDE.md\n!/.claude/\n!/docs/\n' > .git-ai/info/exclude
+printf 'CLAUDE.md\n.claude/\n.git-ai/\ndocs/\n' >> .git/info/exclude
 ```
-Then check: `git status` must NOT show `CLAUDE.md` / `.claude/`.
+Then check: `git status` must NOT show `CLAUDE.md` / `.claude/` / `docs/`.
 
 ## Commit rules
 - Commits are authored with the person's own `git config user.name / user.email`.

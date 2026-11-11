@@ -26,6 +26,7 @@ Read `CLAUDE.md` and, when needed, `docs/ARCHITECTURE.md` / `docs/DECISIONS.md`.
 7. **Privacy** — no mention of Claude, Claude Code, development agents, `.claude/` or `CLAUDE.md` in any
    file tracked by the main repo, nor any hint that the code was AI-generated. Violation = BLOCKER.
    The product's own AI assistant feature (WF-AI, ADR-021) is allowed and is not a violation.
+   `docs/` is private too: files tracked by the main repo must not reference `docs/` or ADR numbers. Violation = MAJOR.
 8. **Requirements** — behaviour and permissions match `docs/REQUIREMENTS.md` (role matrix, requirement IDs).
 
 Run the checks yourself: `pnpm lint && pnpm typecheck && pnpm test`. Failure = BLOCKER.

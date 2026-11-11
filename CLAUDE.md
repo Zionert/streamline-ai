@@ -18,6 +18,9 @@ over through git and the `docs/` folder.
 - `CLAUDE.md` and `.claude/` are NOT tracked by the main repo (excluded via `.git/info/exclude`).
   They live in a separate private config repo with git dir `.git-ai` — see `.claude/AI_WORKFLOW.md`.
   Never add them to the main repo, never add them to `.gitignore` (that would reveal them).
+- **`docs/` is also private**: tracked only by the `.git-ai` repo, excluded from the main repo the same way.
+  The main repo must never reference `docs/` (no links in README, no "see docs/..." or ADR numbers in
+  code comments). Changes to `docs/` are committed to `.git-ai`, not to the main repo.
 
 ## Before any work
 1. Read `docs/PROJECT_STATE.md` — what is done, in progress, next.

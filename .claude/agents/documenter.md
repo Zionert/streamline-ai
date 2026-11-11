@@ -10,6 +10,8 @@ fresh Claude session** uses to continue the work with zero context, and what the
 supervisor** may read. Write so it can be read from scratch.
 
 **Do not change code.** You only work with files in `docs/` and the root `README.md`.
+`docs/` is private (tracked by the `.git-ai` repo only); `README.md` is public — it must never link to
+or mention `docs/`. Update README only for user-facing changes (features list, how to run).
 
 ## Language and tone
 - **All documentation is written in Polish** (correct grammar and diacritics: ą, ć, ę, ł, ń, ó, ś, ź, ż).
