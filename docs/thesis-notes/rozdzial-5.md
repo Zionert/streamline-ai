@@ -89,3 +89,15 @@ Vitest: `packages/shared` — 28 testów, `apps/api` — 77, `apps/web` — 5 (�
 - `shared`: `permissions.test.ts` (macierz uprawnień, `canManageMember`, `canLeaveBoard`), `schemas/board.test.ts` (schematy tablic i członków).
 - `apps/api`: `board.service.test.ts` (reguły serwisu), `require-board-permission.test.ts` (middleware), integracyjne `board.routes.test.ts` na prawdziwym PostgreSQL (Supertest) obejmujące kody 400/401/403/404/409, m.in. identyczność 404 dla nie-członka i nieistniejącej tablicy, kolejność sprawdzeń (rola przed walidacją), 409 `OWNER_CANNOT_LEAVE`, 403 przy zmianie i usunięciu `OWNER`, `ALREADY_MEMBER`.
 - Przegląd kodu: zatwierdzony w 1 rundzie; uwagi drobne (komentarz w schemacie, nieużywane `canManageMember`, brak walidacji `:userId`) odnotowane w stanie projektu.
+
+## 5.x Testy kolumn i współbieżności (M2c)
+- Vitest: `packages/shared` — 368 testów (z 316, +52), `apps/api` — 342 (z 193, +149), `apps/web` — 77; `lint`, `typecheck`, `test`, `format:check` bez błędów (potwierdzone w przeglądzie kodu, 2 rundy, zatwierdzone).
+- `shared`: `schemas/column.test.ts` (schematy ścisłe, granice limitu WIP, reguły sąsiadów).
+- `apps/api`: `column.service.test.ts` (reguły serwisu, `resolveInsertIndex`), `column.routes.test.ts` (integracyjne, prawdziwy PostgreSQL, Supertest), `column.repository.test.ts` (integracyjne: limity czasu transakcji, odpowiedź 503), `prisma-errors.test.ts` (jednostkowe: rozpoznawanie ograniczenia unikalności i kodów PostgreSQL), uzupełnione `board.service.test.ts` (kolumny domyślne) i `error-handler.test.ts` (mapowanie `RankError`).
+- Testy współbieżności i spójności na prawdziwej bazie:
+  - kolejność `ORDER BY rank` w PostgreSQL zgodna z porządkiem w JavaScript (mieszana wielkość liter; uzasadnia `COLLATE "C"`),
+  - równoległe przeniesienia w tę samą lukę — oba kończą się sukcesem; synchronizacja żądań przez `pg_stat_activity` (oczekiwanie, aż transakcje faktycznie czekają na blokadę),
+  - deterministycznie wstrzyknięta kolizja klucza i ponowienie,
+  - rebalansowanie przy wstawianiu i przy przeniesieniu (kolejność zachowana),
+  - wyścigi o inwariant „co najmniej jedna kolumna `DONE`” (równoległe usunięcia i zmiany kategorii).
+- Ograniczenia: brak testu obciążeniowego; ponowienia ograniczone do 5 prób, więc przy bardzo dużej rywalizacji możliwe jest 409 `RANK_CONFLICT` (nie mierzono częstości). Limity czasu transakcji są jawne (`lock_timeout` 2 s, `maxWait` 2 s, `timeout` 5 s); przekroczenie daje 503 `BOARD_BUSY` bez ponowień (ADR-033). Uwagi z drugiej rundy przeglądu odnotowane w stanie projektu.

@@ -3,7 +3,22 @@
 Format: [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/).
 
 ## [Unreleased]
+### Zmieniono
+- `error-handler` mapuje `RankError` na odpowiedzi HTTP: `INVALID_RANK` i `INVALID_ARGUMENT` → 400, `INVALID_RANK_ORDER` → 409.
+- `POST /boards` tworzy tablicę razem z domyślnymi kolumnami.
+
+### Naprawiono
+- Kolizja klucza jest rozpoznawana tylko dla P2002 na ograniczeniu `Column_boardId_rank_key` (wcześniej każdy P2002 w repozytorium kolumn), z obsługą adaptera pg bez `meta.target`.
+- JSDoc w `packages/shared/src/schemas/column.ts` opisuje złagodzone umieszczanie po kolizji; test nie zostawia nieobsłużonej obietnicy.
+
 ### Dodano
+- Kolumny tablicy (M2c, WF-COL-01..04): `GET/POST /boards/:boardId/columns`, `PATCH .../:columnId` (nazwa), `PATCH .../:columnId/move` (pozycja względem sąsiadów `afterId`/`beforeId`), `PATCH .../:columnId/settings` (kategoria, limit WIP, tryb ścisły), `DELETE .../:columnId`; ostatnia kolumna `DONE` nie może być usunięta ani przekategoryzowana.
+- Model `Column`, enum `ColumnCategory` i migracja `20261111151836_columns` (`rank` z `COLLATE "C"`, odraczalne ograniczenie unikalności `(boardId, rank)`).
+- Nowa tablica dostaje 4 domyślne kolumny (Backlog, To Do, In Progress, Done).
+- Przypisywanie `rank` po stronie serwera: ponowienia przy kolizji, rebalansowanie w jednej transakcji, blokady wiersza tablicy; nowe kody błędów `NEIGHBOR_NOT_FOUND`, `INVALID_POSITION`, `RANK_CONFLICT`, `LAST_DONE_COLUMN`.
+- `packages/shared`: schematy kolumn, `COLUMN_CATEGORIES`, `COLUMN_ERROR_CODES`, `DEFAULT_BOARD_COLUMNS`.
+- Jawne limity czasu transakcji kolumn (`lock_timeout` 2 s, `maxWait` 2 s, `timeout` 5 s); przekroczenie daje 503 `BOARD_BUSY` (nowy kod w `COLUMN_ERROR_CODES`), bez ponowień po stronie serwera.
+- Testy: shared 368, api 342, web 77 (nowe: `column.repository.test.ts`, `prisma-errors.test.ts`).
 - Tablice, członkowie i role (M2b, WF-BOARD-01..03): `GET/POST /boards`, `GET/PATCH/DELETE /boards/:boardId`, `GET/POST /boards/:boardId/members`, `PATCH/DELETE /boards/:boardId/members/:userId` (usunięcie siebie = opuszczenie tablicy).
 - Modele `Board`, `BoardMember`, enum `BoardRole` i migracja `20261111143833_boards_members` z częściowym indeksem unikalnym (najwyżej jeden `OWNER` na tablicę).
 - `packages/shared`: schematy tablic i członków, `BOARD_ERROR_CODES`, macierz uprawnień (`BOARD_PERMISSIONS`, `hasBoardPermission`, `canManageMember`, `canLeaveBoard`).

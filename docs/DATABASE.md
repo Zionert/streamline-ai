@@ -1,6 +1,6 @@
 # Baza danych
 
-Stan: M2b — modele `User`, `RefreshToken`, `Board`, `BoardMember`, enum `BoardRole`; dwie migracje. Wstępny model docelowy: `docs/TECH_STACK.md`, sekcja 5.
+Stan: M2c — modele `User`, `RefreshToken`, `Board`, `BoardMember`, `Column`, enumy `BoardRole` i `ColumnCategory`; trzy migracje. Wstępny model docelowy: `docs/TECH_STACK.md`, sekcja 5.
 
 ## Diagram ER
 ```mermaid
@@ -9,6 +9,7 @@ erDiagram
   RefreshToken |o--o| RefreshToken : "replacedBy (rotacja)"
   User ||--o{ BoardMember : "jest członkiem"
   Board ||--o{ BoardMember : "ma"
+  Board ||--o{ Column : "ma (kaskada)"
   User {
     string id PK
     string email UK
@@ -37,6 +38,17 @@ erDiagram
     string boardId FK
     string userId FK
     BoardRole role
+    datetime createdAt
+    datetime updatedAt
+  }
+  Column {
+    string id PK
+    string boardId FK
+    string title
+    string rank "COLLATE C, UK z boardId"
+    ColumnCategory category
+    int wipLimit
+    boolean wipStrict
     datetime createdAt
     datetime updatedAt
   }
@@ -88,7 +100,7 @@ Indeksy: unikalne `tokenHash` i `replacedById`, zwykły `userId`. Para `replaced
 | `createdAt` | DateTime | domyślnie `now()` |
 | `updatedAt` | DateTime | `@updatedAt`; zmienia się tylko przy zmianie nazwy |
 
-Relacja: `members` (1:N).
+Relacje: `members` (1:N), `columns` (1:N, kaskada).
 
 ### BoardMember
 | Pole | Typ | Uwagi |
@@ -104,11 +116,32 @@ Indeksy: unikalny `BoardMember_boardId_userId_key` (`boardId`, `userId`), zwykł
 
 Kaskady: usunięcie tablicy usuwa jej członkostwa; usunięcie użytkownika usuwa jego członkostwa (przy dodaniu usuwania kont trzeba zadbać o tablice bez właściciela).
 
+### ColumnCategory (enum)
+`BACKLOG`, `TODO`, `IN_PROGRESS`, `DONE`. Analityka przepływu i reguły WIP opierają się na kategorii, nie na tytule kolumny (ADR-020).
+
+### Column
+| Pole | Typ | Uwagi |
+|---|---|---|
+| `id` | String | PK, `cuid()` |
+| `boardId` | String | FK → `Board.id`, `onDelete: Cascade` |
+| `title` | String | 1–100 znaków (walidacja Zod) |
+| `rank` | String | `TEXT COLLATE "C"` (ręcznie w SQL migracji); klucz LexoRank liczony przez serwer |
+| `category` | ColumnCategory | domyślnie `TODO` |
+| `wipLimit` | Int? | `null` = brak limitu; zakres 1–999 pilnuje Zod |
+| `wipStrict` | Boolean | domyślnie `false` |
+| `createdAt` | DateTime | domyślnie `now()` |
+| `updatedAt` | DateTime | `@updatedAt`; rebalansowanie rank go nie zmienia |
+
+Indeks: ograniczenie `Column_boardId_rank_key` — `UNIQUE ("boardId", "rank") DEFERRABLE INITIALLY IMMEDIATE`; obsługuje też listowanie według rank. Zwykłe zapisy sprawdzają je po każdej instrukcji (czysty błąd P2002 → ponowienie), a rebalansowanie przepisuje wszystkie rank tablicy jednym `UPDATE ... FROM unnest(...)`, w którym wartości przejściowo mogą się pokrywać z rank innych wierszy. Collation `"C"` i odraczalność są dopisane ręcznie w migracji; Prisma ich nie porównuje, więc `prisma migrate dev` nie zgłasza dryfu (zweryfikowane). Patrz ADR-028, ADR-032.
+
+Inwarianty poza bazą: co najmniej jedna kolumna `DONE` na tablicę (serwis + blokada wiersza tablicy, ADR-029). Tablice sprzed migracji nie mają kolumn.
+
 ## Migracje
 | Migracja | Zawartość |
 |---|---|
 | `20261111010926_auth_users_refresh_tokens` | tabele `User` i `RefreshToken`, indeksy, klucze obce |
 | `20261111143833_boards_members` | enum `BoardRole`, tabele `Board` i `BoardMember`, indeksy (w tym częściowy `BoardMember_one_owner_per_board`), klucze obce z kaskadą |
+| `20261111151836_columns` | enum `ColumnCategory`, tabela `Column` (`rank TEXT COLLATE "C"`), odraczalne ograniczenie `Column_boardId_rank_key`, klucz obcy do `Board` z kaskadą |
 
 Polecenia: `pnpm --filter @streamline/api db:migrate` (tworzy i stosuje migrację w środowisku deweloperskim), `prisma migrate deploy` (stosuje istniejące migracje; używane przez testy).
 

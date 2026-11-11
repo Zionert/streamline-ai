@@ -57,3 +57,25 @@ Rozróżnienie opiera się na polach `revokedAt` i `replacedById` (ADR-013). Kom
 - **Właściciel.** Częściowy indeks `UNIQUE ("boardId") WHERE "role" = 'OWNER'` zapobiega drugiemu właścicielowi; tablica powstaje razem z członkostwem `OWNER`. Dodanie istniejącego członka (także równoległe) wykrywane jest przez błąd unikalności i mapowane na 409 `ALREADY_MEMBER`.
 - **Kontrakt HTTP.** Endpointy i kody błędów: `docs/API.md`. Role przypisywalne przez API: `ADMIN`, `MEMBER`, `VIEWER` (`OWNER` odrzucany walidacją Zod).
 - **Znane ograniczenia.** Wyścig między sprawdzeniem roli w middleware a mutacją przy równoległej degradacji wywołującego; brak endpointu przekazania własności.
+
+## 4.2.3 / 4.3.3 Kolumny tablicy i przypisywanie kluczy porządkujących (M2c)
+- **Schemat.** Model `Column` z enumem `ColumnCategory`; migracja `20261111151836_columns` zawiera ręcznie dopisany SQL, bo Prisma nie wyraża collation ani odraczalności ograniczeń:
+```sql
+"rank" TEXT COLLATE "C" NOT NULL,
+ALTER TABLE "Column" ADD CONSTRAINT "Column_boardId_rank_key"
+  UNIQUE ("boardId", "rank") DEFERRABLE INITIALLY IMMEDIATE;
+```
+  Collation `"C"` sprawia, że `ORDER BY "rank"` daje kolejność identyczną z porównaniem `<` w JavaScript (dla kluczy base-62 z mieszaną wielkością liter inaczej niż domyślne collation). Ograniczenie `DEFERRABLE INITIALLY IMMEDIATE` jest sprawdzane po każdej instrukcji, więc zwykły zapis dostaje natychmiastowy błąd P2002 (do ponowienia), a rebalansowanie można wykonać jedną instrukcją, w której klucze przejściowo pokrywają się z kluczami innych wierszy (ADR-028).
+- **Warstwy.** `column.routes` (montowane w routerze tablic z `mergeParams`) → `column.controller` → `column.service` → `column.repository`; tylko repozytorium korzysta z Prisma. Repozytorium udostępnia `transaction(fn)` z interfejsem `ColumnStore` (`lockBoard`, `listForBoard`, `setRanks` itd.), a serwis składa z nich przypadki użycia; błąd P2002 jest tłumaczony na `RankCollisionError`.
+- **Wstawianie i przeniesienie.** `resolveInsertIndex` zamienia `afterId`/`beforeId` na indeks w liście kolumn (z pominięciem przenoszonej), a `rankBetween` liczy klucz z sąsiadów. Każda próba to osobna transakcja READ COMMITTED zaczynająca się od blokady wiersza tablicy; po kolizji klucza próba jest powtarzana (maksymalnie `MAX_RANK_ATTEMPTS` = 5, potem 409 `RANK_CONFLICT`) ze złagodzonym sprawdzaniem przyległości sąsiadów, co pozwala obu równoległym przeniesieniom do jednej luki zakończyć się sukcesem (ADR-031).
+- **Rebalansowanie.** Gdy obliczony klucz przekracza `RANK_MAX_LENGTH`, próba z blokadą współdzieloną jest przerywana i powtarzana z blokadą wyłączną; wtedy `rebalanceRanks(n)` przepisuje wszystkie klucze tablicy jedną instrukcją:
+```sql
+UPDATE "Column" AS c SET "rank" = v."rank"
+FROM unnest($1::text[], $2::text[]) AS v("id", "rank")
+WHERE c."id" = v."id" AND c."boardId" = $3
+```
+  Rebalansowanie nie zmienia `updatedAt` (kolejność się nie zmienia). Odpowiedź REST zawiera tylko jedną kolumnę, więc klient po rebalansowaniu odświeża listę.
+- **Inwariant `DONE`.** Usunięcie i zmiana kategorii biorą blokadę wyłączną, zliczają kolumny `DONE` i przy ostatniej zwracają 409 `LAST_DONE_COLUMN`; równoległe usunięcia dwóch ostatnich kolumn `DONE` są serializowane.
+- **Mapowanie błędów.** `error-handler` tłumaczy `RankError`: `INVALID_RANK` i `INVALID_ARGUMENT` → 400, `INVALID_RANK_ORDER` → 409.
+- **Domyślne kolumny.** `POST /boards` tworzy tablicę, członkostwo właściciela i cztery kolumny w jednym zagnieżdżonym `create` (jedna transakcja); klucze z `rankSequenceBetween(null, null, 4)`.
+- Szczegóły i kody błędów: `docs/API.md`; decyzje: ADR-028–032.

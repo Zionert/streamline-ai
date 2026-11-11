@@ -112,6 +112,41 @@ sequenceDiagram
 
 Walidacja ciała (Zod) następuje po sprawdzeniu roli. Zdarzenia Socket.io dla tablic i członków nie są jeszcze emitowane.
 
+### Kolumny: przypisywanie `rank` i współbieżność (M2c, ADR-028–032)
+
+Trasy `/boards/:boardId/columns` są montowane w routerze tablic (`createColumnRouter`, `mergeParams`) i korzystają z tego samego `requireBoardPermission`. `column.service` liczy `rank` wyłącznie na serwerze z zapisanych sąsiadów (`resolveInsertIndex` → `rankBetween`); klient podaje tylko `afterId`/`beforeId`. Wszystkie zapisy kolumn (z wyjątkiem zmiany nazwy) idą w transakcji, która najpierw ustawia `lock_timeout` (2 s, lokalnie dla transakcji) i blokuje wiersz tablicy; transakcja ma też limity `maxWait` 2 s i `timeout` 5 s (ADR-033):
+- `FOR SHARE` — wstawienie i przeniesienie (wykonują się równolegle; kolizję tego samego klucza wykrywa ograniczenie unikalności `(boardId, rank)`),
+- `FOR NO KEY UPDATE` — rebalansowanie, usunięcie i zmiana ustawień (wyłączne wobec innych zapisów kolumn tej tablicy).
+
+```mermaid
+sequenceDiagram
+  participant C as Klient
+  participant S as ColumnService
+  participant D as PostgreSQL
+  C->>S: PATCH /boards/:id/columns/:colId/move {afterId, beforeId}
+  loop do 5 prób, każda we własnej transakcji (READ COMMITTED)
+    S->>D: BEGIN; SELECT ... FROM Board FOR SHARE (lub NO KEY UPDATE)
+    S->>D: lista kolumn tablicy (ORDER BY rank)
+    S->>S: indeks wstawienia + rankBetween(poprzedni, następny)
+    alt klucz dłuższy niż RANK_MAX_LENGTH i blokada współdzielona
+      S->>D: ROLLBACK; ponowna próba z blokadą wyłączną
+    else klucz dłuższy niż RANK_MAX_LENGTH i blokada wyłączna
+      S->>D: UPDATE Column ... FROM unnest(ids, ranks) (rebalansowanie)
+      S->>D: COMMIT
+    else zwykły zapis
+      S->>D: UPDATE Column SET rank
+      alt naruszenie unikalności (P2002)
+        D-->>S: błąd; ROLLBACK; kolejna próba z łagodniejszym sprawdzaniem sąsiadów
+      else
+        S->>D: COMMIT
+      end
+    end
+  end
+  S-->>C: 200 {column}, 409 RANK_CONFLICT po 5 próbach lub 503 BOARD_BUSY (55P03/P2028, bez ponowienia)
+```
+
+Rebalansowanie nigdy nie podnosi trzymanej blokady (restart próby zamiast „upgrade”), więc nie powstaje zakleszczenie. Usunięcie i zmiana ustawień biorą blokadę wyłączną, co czyni inwariant „co najmniej jedna kolumna `DONE`” odpornym na wyścigi. Tworzenie tablicy wstawia 4 domyślne kolumny w tej samej transakcji (`board.repository`: zagnieżdżony `create`). Przekroczenie limitu czasu (PostgreSQL 55P03 lub Prisma P2028) repozytorium zgłasza jako `BoardBusyError`, serwis jako `ServiceUnavailableError`, a klient dostaje 503 `BOARD_BUSY`. Zdarzenia Socket.io dla kolumn nie są jeszcze emitowane; po rebalansowaniu zmieniają się klucze wielu kolumn, a odpowiedź REST zawiera jedną.
+
 Docelowy przepływ (ADR-003): UI → REST → baza → zdarzenie Socket.io do pokoju `board:<id>` → pozostali klienci.
 
 ## Narzędzia i CI

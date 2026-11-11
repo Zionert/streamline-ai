@@ -2,6 +2,13 @@
 
 Najnowsze wpisy na górze.
 
+## 2026-11-11 — Nazar — M2c: kolumny tablicy (backend)
+- Prisma: `Column`, enum `ColumnCategory`; migracja `20261111151836_columns` z ręcznym SQL (`rank TEXT COLLATE "C"`, `UNIQUE (boardId, rank) DEFERRABLE INITIALLY IMMEDIATE`).
+- `packages/shared`: `schemas/column.ts` (schematy, `COLUMN_ERROR_CODES`, `DEFAULT_BOARD_COLUMNS`) i testy `column.test.ts`; eksport w `index.ts`.
+- API: `column.repository.ts`, `column.service.ts`, `column.controller.ts`, `column.routes.ts` (montowane w `board.routes.ts`), `app.ts`; `board.repository.ts` i `board.service.ts` tworzą 4 domyślne kolumny; `error-handler.ts` mapuje `RankError`; `test/helpers.ts`; testy: `column.service.test.ts`, `column.routes.test.ts`, uzupełnione `board.service.test.ts` i `error-handler.test.ts`.
+- Przegląd kodu: 2 rundy, zatwierdzone. Poprawki po rundzie 1: JSDoc złagodzonego umieszczania, jawne limity transakcji kolumn (`lock_timeout` przez `set_config`, `maxWait`, `timeout`; `ColumnTransactionOptions` w `column.repository.ts`) z mapowaniem 55P03/P2028 na `BoardBusyError` → `ServiceUnavailableError` → 503 `BOARD_BUSY`, rozpoznawanie tylko P2002 na `Column_boardId_rank_key` (`isUniqueViolationOf`, `postgresErrorCode` w `prisma-errors.ts`), poprawka nieobsłużonej obietnicy w teście. Nowe testy: `column.repository.test.ts` (integracyjne), `prisma-errors.test.ts`. Testy: shared 368, api 342, web 77. Uwagi z rundy 2 w `docs/PROJECT_STATE.md`.
+- Dokumentacja: API, DATABASE, ARCHITECTURE, ADR-028–033, notatki do rozdz. 3–5, stan projektu (M2b oznaczone jako zmergowane, PR #7). Zmiany niezacommitowane.
+
 ## 2026-11-11 — Nazar — M2b: tablice, członkowie i role
 - Prisma: `Board`, `BoardMember`, enum `BoardRole`; migracja `20261111143833_boards_members` z ręcznym częściowym indeksem unikalnym `BoardMember_one_owner_per_board`.
 - `packages/shared`: `schemas/board.ts`, `permissions.ts` (macierz uprawnień) wraz z testami; eksport w `index.ts`.

@@ -1,6 +1,6 @@
 # API
 
-Stan: M2b — `GET /health`, uwierzytelnianie (`/auth/*`) oraz tablice i członkowie (`/boards/*`). Kolejne endpointy dochodzą z funkcjonalnościami.
+Stan: M2c — `GET /health`, uwierzytelnianie (`/auth/*`), tablice i członkowie (`/boards/*`) oraz kolumny (`/boards/:boardId/columns`). Kolejne endpointy dochodzą z funkcjonalnościami.
 
 ## Konwencje
 - Ścieżki w tym dokumencie są podane względem korzenia API (np. `/auth/login`). Przeglądarka używa prefiksu `/api` (np. `/api/auth/login`) — serwer Vite przekazuje `/api` do API (`VITE_API_PROXY_TARGET`) i usuwa prefiks.
@@ -16,6 +16,7 @@ Schemat `errorResponseSchema` (`packages/shared`):
 Obiekt `error` może zawierać dodatkowe pola (np. szczegóły walidacji). Obsługa w `apps/api/src/middleware/error-handler.ts`:
 - `AppError` (w tym `ValidationError`, `NotFoundError`) — status i kod z błędu,
 - `ZodError` — błąd walidacji (400 `VALIDATION_ERROR`),
+- `RankError` (`packages/shared`) — `INVALID_RANK` i `INVALID_ARGUMENT` → 400, `INVALID_RANK_ORDER` → 409 (kod błędu = kod `RankError`; błąd jest logowany jako ostrzeżenie, bo może wskazywać uszkodzone rank),
 - błędy parsera ciała żądania 4xx — `BAD_REQUEST`,
 - pozostałe — 500 (bez ujawniania szczegółów).
 
@@ -116,7 +117,7 @@ Role: `OWNER`, `ADMIN`, `MEMBER`, `VIEWER`. Macierz akcji (`BOARD_PERMISSIONS`):
 | `column:write`, `card:write`, `ai:use` | tak | tak | tak | nie |
 | `board:delete`, `board:transfer` | tak | nie | nie | nie |
 
-Akcje `column:*`, `card:write`, `ai:use` i `board:transfer` są zdefiniowane, ale nie mają jeszcze endpointów.
+Akcje `column:write` i `column:settings` mają endpointy od M2c (sekcja „Kolumny”). Akcje `card:write`, `ai:use` i `board:transfer` są zdefiniowane, ale nie mają jeszcze endpointów.
 
 ### Zasady dostępu i kody błędów
 - Użytkownik niebędący członkiem tablicy dostaje 404 `NOT_FOUND` („Board not found”) — identycznie jak dla nieistniejącej tablicy (nie ujawniamy istnienia; ADR-026).
@@ -185,5 +186,74 @@ curl -X POST http://localhost:4000/boards/$BOARD_ID/members -H "Authorization: B
 ### Middleware `requireBoardPermission`
 `requireBoardPermission(action, { param })` (domyślnie `param = 'boardId'`) działa po `requireAuth`: wczytuje członkostwo wywołującego, zwraca 404 dla nie-członka i 403 przy braku uprawnienia, a członkostwo zapisuje w `res.locals.boardMembership` (odczyt: `getBoardMembership(res)`). Trasy zagnieżdżone wymagają `Router({ mergeParams: true })`. Serwis dodatkowo sprawdza uprawnienia samodzielnie (ADR-025).
 
+## Kolumny (`/boards/:boardId/columns`)
+
+Implementacja: `apps/api/src/routes/column.routes.ts` (montowane w `board.routes.ts`, `Router({ mergeParams: true })`), `controllers/column.controller.ts`, `services/column.service.ts`, `repositories/column.repository.ts`. Schematy i kody błędów: `packages/shared/src/schemas/column.ts`. Wszystkie trasy wymagają access tokena i członkostwa w tablicy (nie-członek: 404 `NOT_FOUND`, brak roli: 403 `FORBIDDEN`; rola jest sprawdzana przed walidacją ciała). Ciała żądań są ścisłe (`strictObject`): nieznane pola dają 400 `VALIDATION_ERROR`.
+
+### Obiekt `Column`
+`{ id, boardId, title, rank, category, wipLimit, wipStrict, createdAt, updatedAt }`:
+- `rank` — klucz porządkujący (LexoRank, `packages/shared/src/rank/`); porównywać przez `<`, nigdy `localeCompare`. Klient nie wysyła klucza — serwer liczy go z zapisanych sąsiadów.
+- `category` — `BACKLOG` | `TODO` | `IN_PROGRESS` | `DONE`; `wipLimit` — liczba całkowita 1–999 albo `null` (brak limitu); `wipStrict` — `true`: limit blokuje dodawanie kart, `false`: tylko ostrzega (egzekwowanie dopiero z kartami, M3).
+- `title` — przycinany, 1–100 znaków.
+
+### Pozycja względem sąsiadów (`afterId`, `beforeId`)
+Dotyczy `POST` i `PATCH .../move`. `afterId` to kolumna, która ma BEZPOŚREDNIO POPRZEDZAĆ umieszczaną kolumnę (`null` = na początek); `beforeId` to kolumna, która ma BEZPOŚREDNIO PO NIEJ NASTĘPOWAĆ (`null` = na koniec); pominięte pole = brak ograniczenia z tej strony.
+- Przy jednym sąsiedzie drugim jest ten, który aktualnie leży obok niego. Bez żadnego (`POST`) kolumna trafia na koniec; `PATCH .../move` wymaga co najmniej jednego pola.
+- Przy obu sąsiadach muszą być obecnie przyległe (z pominięciem przenoszonej kolumny), inaczej 409 `INVALID_POSITION` (nieaktualny widok klienta — odświeżyć listę).
+- Wyjątek: po kolizji klucza z równoległym żądaniem (ta sama luka) ponowienie wymaga tylko, by `afterId` leżał przed `beforeId`, i umieszcza kolumnę bezpośrednio po `afterId`; dzięki temu dwa równoległe przeniesienia do tej samej luki kończą się sukcesem.
+- Sąsiad spoza tablicy lub usunięty w międzyczasie: 404 `NEIGHBOR_NOT_FOUND`. `afterId` i `beforeId` równe sobie albo równe przenoszonej kolumnie: 400.
+- Przeniesienie na aktualną pozycję nic nie zmienia i zwraca kolumnę bez zapisu.
+
+### Kody błędów kolumn
+| Status | `error.code` | Kiedy |
+|---|---|---|
+| 400 | `VALIDATION_ERROR` | nieprawidłowe ciało (m.in. brak pól, nieznane pole, `afterId` = `beforeId`, brak ustawień w `/settings`, kolumna sama swoim sąsiadem) |
+| 400 | `INVALID_RANK`, `INVALID_ARGUMENT` | `RankError` z funkcji rank (nie powinno wystąpić przy poprawnych danych) |
+| 401 | `UNAUTHORIZED` | brak/nieprawidłowy access token |
+| 403 | `FORBIDDEN` | rola nie pozwala (`column:write`: OWNER, ADMIN, MEMBER; `column:settings`: OWNER, ADMIN) |
+| 404 | `NOT_FOUND` | tablica nie istnieje lub brak członkostwa; kolumna nie należy do tablicy |
+| 404 | `NEIGHBOR_NOT_FOUND` | `afterId`/`beforeId` nie jest kolumną tej tablicy |
+| 409 | `INVALID_POSITION` | `afterId` i `beforeId` nie są przyległe (nieaktualny widok) |
+| 409 | `RANK_CONFLICT` | 5 prób przypisania klucza zakończyło się kolizją przy równoległych zmianach; żądanie można ponowić |
+| 409 | `LAST_DONE_COLUMN` | usunięcie lub zmiana kategorii ostatniej kolumny `DONE` |
+| 409 | `INVALID_RANK_ORDER` | `RankError`: niemożliwa kolejność kluczy |
+| 503 | `BOARD_BUSY` | transakcja zapisu kolumn nie uzyskała blokad lub połączenia w limicie czasu (`lock_timeout` 2 s, `maxWait` 2 s, `timeout` 5 s; ADR-033); serwer nie ponawia, klient może ponowić żądanie po chwili. Dotyczy tworzenia, przeniesienia, zmiany ustawień i usunięcia; zmiana nazwy nie używa transakcji. Bez nagłówka `Retry-After` |
+
+### GET /boards/:boardId/columns
+- Uprawnienia: `board:view`. Odpowiedź 200: `{ "columns": Column[] }` w kolejności rank. Błędy: 401, 404.
+
+### POST /boards/:boardId/columns
+- Uprawnienia: `column:write`. Ciało (`createColumnSchema`): `title`, opcjonalnie `afterId`, `beforeId` (zasady powyżej; domyślnie na koniec).
+- Odpowiedź 201: `{ "column": Column }`; nowa kolumna ma `category: "TODO"`, `wipLimit: null`, `wipStrict: false` (kategorię zmienia się przez `/settings`).
+- Błędy: 400, 401, 403, 404 (`NOT_FOUND`, `NEIGHBOR_NOT_FOUND`), 409 (`INVALID_POSITION`, `RANK_CONFLICT`).
+```bash
+curl -X POST http://localhost:4000/boards/$BOARD_ID/columns -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"title":"Review","afterId":"$IN_PROGRESS_ID"}'
+```
+
+### PATCH /boards/:boardId/columns/:columnId
+- Uprawnienia: `column:write`. Ciało (`renameColumnSchema`): `title`. Odpowiedź 200: `{ "column": Column }`. Błędy: 400, 401, 403, 404.
+
+### PATCH /boards/:boardId/columns/:columnId/move
+- Uprawnienia: `column:write`. Ciało (`moveColumnSchema`): `afterId` i/lub `beforeId` (co najmniej jedno; `null` dozwolone).
+- Odpowiedź 200: `{ "column": Column }` — tylko przenoszona kolumna. Jeśli w trakcie nastąpiło rebalansowanie, rank innych kolumn też się zmieniły, a odpowiedź ich nie zawiera — klient powinien odświeżyć listę.
+- Błędy: 400, 401, 403, 404 (`NOT_FOUND`, `NEIGHBOR_NOT_FOUND`), 409 (`INVALID_POSITION`, `RANK_CONFLICT`).
+```bash
+curl -X PATCH http://localhost:4000/boards/$BOARD_ID/columns/$COLUMN_ID/move -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"afterId":null}'   # na początek
+```
+
+### PATCH /boards/:boardId/columns/:columnId/settings
+- Uprawnienia: `column:settings` (OWNER, ADMIN). Ciało (`updateColumnSettingsSchema`): `category`, `wipLimit` (1–999 lub `null` = bez limitu), `wipStrict`; co najmniej jedno pole.
+- Odpowiedź 200: `{ "column": Column }`. Zmiana kategorii ostatniej kolumny `DONE` na inną: 409 `LAST_DONE_COLUMN`.
+- Błędy: 400, 401, 403, 404, 409.
+
+### DELETE /boards/:boardId/columns/:columnId
+- Uprawnienia: `column:write`. Odpowiedź 204 bez ciała. Usunięcie ostatniej kolumny `DONE`: 409 `LAST_DONE_COLUMN`. Inwariant „co najmniej jedna kolumna `DONE`” jest chroniony blokadą wyłączną wiersza tablicy (ADR-029), więc równoległe usunięcia dwóch kolumn `DONE` nie usuną obu.
+- Błędy: 401, 403, 404, 409.
+
+### Domyślne kolumny
+`POST /boards` tworzy w tej samej transakcji 4 kolumny: Backlog (`BACKLOG`), To Do (`TODO`), In Progress (`IN_PROGRESS`), Done (`DONE`) z równomiernie rozłożonymi kluczami. Tablice utworzone przed M2c nie są uzupełniane.
+
 ## Zdarzenia Socket.io
-Brak zaimplementowanych zdarzeń (endpointy tablic i członków z M2b niczego nie rozgłaszają). W `packages/shared` zdefiniowano wstępną stałą `WS_EVENTS` (`board:updated`, `column:created`, `card:moved`) oraz funkcję `boardRoom()` (pokój `board:<id>`). Nazwy są robocze i zostaną zatwierdzone razem z funkcjonalnościami.
+Brak zaimplementowanych zdarzeń (endpointy tablic, członków i kolumn niczego nie rozgłaszają; zdarzenie dla rebalansowania rank — do ustalenia). W `packages/shared` zdefiniowano wstępną stałą `WS_EVENTS` (`board:updated`, `column:created`, `card:moved`) oraz funkcję `boardRoom()` (pokój `board:<id>`). Nazwy są robocze i zostaną zatwierdzone razem z funkcjonalnościami.
