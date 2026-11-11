@@ -15,6 +15,8 @@ flowchart LR
 ### packages/shared
 Schematy Zod (`healthResponseSchema`, `errorResponseSchema`, uwierzytelnianie w `schemas/auth.ts`), `WS_EVENTS` (robocze), `boardRoom()`. Udostępniany przez warunek `@streamline/source` (ADR-005).
 
+Moduł `src/rank/` (M2a, ADR-022–024): `keys.ts` (alfabet, `isValidRank`, `RankError`, `rankSchema`, `RANK_MAX_LENGTH`), `lexorank.ts` (`rankFirst`, `rankBetween`, `rankAfter`, `rankBefore`, `rankSequenceBetween`), `rebalance.ts` (`needsRebalance`, `rebalanceRanks`), `index.ts`. Funkcje są czyste i bez zależności; klucze wyznacza wyłącznie serwer na podstawie zapisanych sąsiadów. Poza `src/`: `test-utils/prng.ts` (generator mulberry32 do testów) i `bench/rank.bench.ts` (benchmark).
+
 ### apps/api (Controller → Service → Repository)
 - `app.ts` — `createApp({ config, logger, db })` (helmet, cors, pino-http, JSON 1 MB, cookie-parser, trasy, not-found, error-handler); zależności (repozytoria, serwisy, `requireAuth`) składane ręcznie; `server.ts` — nasłuch i łagodne zamykanie.
 - `config/env.ts` — walidacja Zod: `NODE_ENV`, `PORT` (4000), `DATABASE_URL`, `CORS_ORIGIN` (lista po przecinku, domyślnie `http://localhost:5173`), `LOG_LEVEL` oraz zmienne uwierzytelniania (`docs/PROJECT_STATE.md`).

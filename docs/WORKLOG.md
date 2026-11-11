@@ -2,6 +2,14 @@
 
 Najnowsze wpisy na górze.
 
+## 2026-11-11 — Nazar — M2a: własny LexoRank i benchmark
+- `packages/shared/src/rank/`: klucze base-62 (`keys.ts`), `rankBetween`/`rankAfter`/`rankBefore`/`rankSequenceBetween`/`rankFirst` (`lexorank.ts`), `needsRebalance`/`rebalanceRanks` (`rebalance.ts`), `index.ts`; eksport z `packages/shared/src/index.ts`.
+- Testy: `keys/lexorank/rebalance/collation.test.ts` (198 nowych, shared 226); `packages/shared/test-utils/prng.ts` (mulberry32).
+- Benchmark `packages/shared/bench/rank.bench.ts` (skrypt `bench`) vs reindeksacja całkowitoliczbowa O(n); wyniki w notatkach do rozdz. 5.3.
+- Zmieniono też `packages/shared/package.json` i `tsconfig.json`.
+- Przegląd kodu: 1 runda, zatwierdzone; po nim drobne poprawki (kontrakt użycia w JSDoc, pomiar wsadowy w benchmarku).
+- ADR-022–024. Testy API nie uruchomione (brak Dockera) — do wykonania przed commitem.
+
 ## 2026-11-11 — Nazar — Wymagania i rozszerzony plan prac
 - Nowy dokument `docs/REQUIREMENTS.md`: macierz uprawnień ról, wymagania funkcjonalne (MoSCoW) i niefunkcjonalne, zakres wyłączony.
 - Wyróżnik projektu: analityka przepływu (lead/cycle time, przepustowość, CFD, aging WIP, prognoza Monte Carlo, prawo Little'a) oraz obecność użytkowników w czasie rzeczywistym.

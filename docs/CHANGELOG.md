@@ -4,6 +4,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/).
 
 ## [Unreleased]
 ### Dodano
+- Własna implementacja LexoRank w `packages/shared` (M2a): `rankFirst`, `rankBetween`, `rankAfter`, `rankBefore`, `rankSequenceBetween`, `isValidRank`, `assertValidRank`, `rankSchema`, `RankError`, `RANK_MAX_LENGTH` (32), `needsRebalance`, `rebalanceRanks`.
+- 198 nowych testów jednostkowych (shared: 226 łącznie), w tym zgodność z wyrocznią BigInt i kolejnością bajtową (`COLLATE "C"`).
+- Benchmark `pnpm --filter @streamline/shared bench`: LexoRank vs reindeksacja całkowitoliczbowa O(n).
 - Uwierzytelnianie frontendu (M1b): strony `/login` i `/register`, `authSlice` (Zustand, access token tylko w pamięci), klient axios z automatycznym odświeżaniem sesji (single-flight, ponowienie po `REFRESH_TOKEN_ROTATED`), `ProtectedRoute`, `GuestRoute`, przywracanie sesji po załadowaniu strony, przycisk wylogowania.
 - Zależności `apps/web`: zustand 5.1.0, axios 1.21.1, react-hook-form 7.91.0, @hookform/resolvers 7.0.5, zod 4.6.7.
 - Testy komponentów i klienta HTTP (testy: shared 28, api 77, web 77).

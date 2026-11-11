@@ -125,3 +125,22 @@
 - **Decyzja:** moduł po stronie serwera za interfejsem `LlmProvider` (konkretny dostawca wybierany konfiguracją), włączany zmienną `AI_ENABLED`; wyniki są wyłącznie propozycjami zatwierdzanymi przez użytkownika; limit zapytań na użytkownika (`AiUsage`); w testach dostawca atrapowy.
 - **Alternatywy:** wywołania z przeglądarki (wyciek klucza API); automatyczne stosowanie wyników (ryzyko błędnych zmian); brak modułu.
 - **Konsekwencje:** aplikacja działa w pełni bez AI; zmiana dostawcy nie wpływa na resztę kodu; moduł realizowany dopiero po ukończeniu M0–M6.
+
+## ADR-022: Format klucza kolejności — base-62, bez końcowego `0`, porządek bajtowy
+- **Kontekst:** ADR-002 wybiera pole `rank` (string); trzeba określić alfabet, postać kanoniczną i sposób porównywania dający ten sam wynik w JS i w PostgreSQL.
+- **Decyzja:** alfabet `0-9A-Za-z` (62 znaki, rosnące kody ASCII). Klucz to ułamek `0.d1d2…`, niepusty, **nie może kończyć się na `0`** (jedna postać dla każdej wartości, więc porządek leksykograficzny = liczbowy; każdy klucz > 0, więc zawsze jest miejsce przed nim). Porównanie: `<` w JS = porządek bajtów UTF-8 = `COLLATE "C"` w PostgreSQL. `localeCompare`/ICU daje inny wynik dla mieszanej wielkości liter (potwierdza `collation.test.ts`), dlatego kolumna `rank` musi mieć `COLLATE "C"`. `rankFirst()` = `V` (0,5).
+- **Alternatywy:** alfabet base-36/małe litery (dłuższe klucze, brak problemu z kollacją); dopuszczenie końcowego `0` (wiele zapisów tej samej wartości, nieprawdziwy porządek tekstowy); domyślna kollacja bazy (zależna od lokalizacji, niezgodna z JS).
+- **Konsekwencje:** M2b musi ustawić `COLLATE "C"` na kolumnach `rank` i przetestować to na prawdziwym PostgreSQL; `rankSchema` odrzuca klucze niekanoniczne.
+
+## ADR-023: Wybór klucza — najkrótszy w przedziale, narastanie o znak na ok. 61 dopisań
+- **Kontekst:** długość kluczy decyduje o częstości rebalansowania; różne wzorce użycia mają inne najgorsze przypadki.
+- **Decyzja:** `rankBetween(a, b)` przechodzi cyfra po cyfrze i zwraca najkrótszy klucz w przedziale (zweryfikowane wyrocznią BigInt). Przy dwóch granicach — środkowy kandydat; przy jednej otwartej — kandydat najbliższy sąsiadowi (`rankAfter` zwiększa pierwszą cyfrę z zapasem: `V`→`W`, `z`→`z1`), więc dopisywanie rośnie o jeden znak na ok. 61 wstawień. Błędy: `RankError` (`INVALID_RANK`, `INVALID_RANK_ORDER`, `INVALID_ARGUMENT`). Funkcja jest deterministyczna.
+- **Alternatywy:** zawsze środek przedziału (szybki wzrost długości przy dopisywaniu); losowy klucz w przedziale (mniej kolizji, ale niedeterministyczny i trudniejszy do testowania).
+- **Konsekwencje:** równoległe wstawienia w tę samą lukę dają ten sam klucz — M2b wymaga unikalności (kontener, `rank`) i ponowienia albo blokady wierszy. Pomiary: rozdz. 5.3.
+
+## ADR-024: `RANK_MAX_LENGTH` = 32 i rebalansowanie całej listy
+- **Kontekst:** klucze mogą rosnąć bez ograniczeń przy wielokrotnym wstawianiu w jedną lukę.
+- **Decyzja:** `RANK_MAX_LENGTH` = 32, `rankSchema` odrzuca dłuższe. Gdy wyliczony klucz jest dłuższy, nie jest zapisywany; cała lista kontenera jest przepisywana przez `rebalanceRanks(n)` w tej samej transakcji. `rebalanceRanks(n)`: najmniejsze L, że 62^L > n; klucz i = floor((i+1)·62^L/(n+1)) w arytmetyce całkowitej (61 elementów → 1 znak, do 3843 → 2, 100 tys. → 3; ok. 8,5 ms dla 100 tys.). Klucze liczy wyłącznie serwer z zapisanych sąsiadów; API przyjmuje identyfikatory sąsiadów lub indeks docelowy.
+- **Alternatywy:** rebalansowanie w tle (stany pośrednie, wyścigi); brak limitu długości (rosnące indeksy i koszt porównań).
+- **Konsekwencje:** rebalansowanie to rzadki zapis O(n); M2b decyduje o zbiorczym zdarzeniu socket i mapuje `RankError` na HTTP 400/409.
+- **Uwaga (drobna):** benchmark działa na `dist` przez natywne usuwanie typów Node 24 (`node bench/rank.bench.ts`, odwołanie do pakietu przez samoodniesienie), bez nowych zależności; dlatego generator PRNG jest zduplikowany w pliku benchmarku (testy używają `test-utils/prng.ts`).

@@ -3,10 +3,10 @@
 _Aktualizacja: 2026-11-11_
 
 ## W skrócie
-M0 (szkielet monorepo) i M1a (uwierzytelnianie backendu) są zmergowane do `main` (PR #1, commit `fc29bb0`; PR #2, merge `fc59c7e`, commit `e741512`). M1b (uwierzytelnianie we frontendzie) jest zaimplementowane i zatwierdzone w przeglądzie kodu (2 rundy); zmiany są na gałęzi `feat/m1b-auth-frontend` i nie są jeszcze zacommitowane.
+M0, M1a i M1b są zmergowane do `main` (ostatnio PR #3, #4, #5). M2a (własny LexoRank w `packages/shared` + benchmark) jest zaimplementowane i zatwierdzone w przeglądzie kodu (1 runda); zmiany są na gałęzi `feat/m2a-lexorank` i nie są jeszcze zacommitowane — przed commitem trzeba uruchomić testy API (`pnpm db:up && pnpm test`), bo nie były uruchamiane (Docker wyłączony; kod API bez zmian).
 
 ## Gotowe
-- Dokumentacja stosu, organizacji pracy i decyzji (ADR-001–019).
+- Dokumentacja stosu, organizacji pracy i decyzji (ADR-001–024).
 - M0: monorepo pnpm, API Express 5 z `GET /health`, frontend Vite/React/Tailwind/shadcn, pakiet `shared`, `docker-compose.yml` (PostgreSQL 18), ESLint/Prettier/Husky/lint-staged, Vitest, GitHub Actions CI. `@hello-pangea/dnd` 18.0.1 potwierdzony z React 19.3.1.
 - M1a (backend):
   - modele `User`, `RefreshToken` i migracja `20261111010926_auth_users_refresh_tokens` (`docs/DATABASE.md`),
@@ -22,15 +22,27 @@ M0 (szkielet monorepo) i M1a (uwierzytelnianie backendu) są zmergowane do `main
   - strony `/login` i `/register` (react-hook-form + `zodResolver` ze schematami `loginSchema`/`registerSchema` z `shared`, komponenty shadcn/ui),
   - `ProtectedRoute` (przekierowanie do `/login` ze stanem `from`), `GuestRoute`, `AuthBootstrap` (przywracanie sesji przez `/auth/refresh`, odporne na StrictMode — ADR-018), przycisk „Log out” w `AppLayout`,
   - testy RTL z ręcznym adapterem axios zamiast MSW (ADR-019).
-- Sprawdzone lokalnie: `lint`, `typecheck`, `test` (shared 28, api 77, web 77), `format:check`, `build` web (ostrzeżenie: jeden fragment 537 kB).
+- M2a (`packages/shared/src/rank/`, ADR-002, ADR-022–024):
+  - `rankFirst`, `rankBetween(a, b)` (`null` = granica otwarta), `rankAfter`, `rankBefore`, `rankSequenceBetween`, `isValidRank`, `assertValidRank`, `rankSchema`, `RankError` (kody `INVALID_RANK`, `INVALID_RANK_ORDER`, `INVALID_ARGUMENT`), `RANK_MAX_LENGTH` (32), `needsRebalance`, `rebalanceRanks`,
+  - klucz: ułamek w systemie 62-cyfrowym (`0-9A-Za-z`), niepusty, nie kończy się na `0`; porządek leksykograficzny = liczbowy = `COLLATE "C"` w PostgreSQL,
+  - testy: 198 nowych (`keys`, `lexorank`, `rebalance`, `collation`), w tym zgodność z wyrocznią BigInt i dowód różnicy względem `localeCompare`,
+  - benchmark `pnpm --filter @streamline/shared bench` (`pnpm build && node bench/rank.bench.ts`, natywne usuwanie typów w Node 24, działa na `dist`, bez nowych zależności); wyniki: `docs/thesis-notes/rozdzial-5.md`, sekcja 5.3.
+- Sprawdzone lokalnie (M2a): `lint`, `typecheck`, `format:check`, `build`, `test` — shared 226, web 77; testy API (77) nie uruchomione w tej sesji.
+- Sprawdzone wcześniej (M1b): `lint`, `typecheck`, `test` (shared 28, api 77, web 77), `format:check`, `build` web (ostrzeżenie: jeden fragment 537 kB).
 
 ## W toku
 - —
 
 ## Kolejne kroki
 Zakres i priorytety: `docs/REQUIREMENTS.md`; plan: `docs/WORKFLOW.md`, sekcja 7.
-1. **M2a** — własna implementacja LexoRank w `packages/shared` + benchmark (podstawa kolejności kolumn i kart).
-2. **M2b** — tablice, członkowie i role zgodnie z macierzą uprawnień (`REQUIREMENTS.md`, sekcja 2).
+1. **Zatwierdzenie M2a**: `pnpm db:up && pnpm test`, następnie commit i PR (commit tylko na wyraźną prośbę).
+2. **M2b** — tablice, członkowie i role zgodnie z macierzą uprawnień (`REQUIREMENTS.md`, sekcja 2). Przeniesione z M2a (kontrakt użycia `rank`):
+   - kolumna `rank` jako tekst z `COLLATE "C"` (inaczej `ORDER BY` w PostgreSQL da inną kolejność niż `<` w JS dla mieszanej wielkości liter),
+   - unikalność (kontener, `rank`) + ponowienie przy kolizji albo blokada wierszy — `rankBetween` jest deterministyczne, więc równoległe wstawienia w tę samą lukę dają ten sam klucz,
+   - gdy wynik dłuższy niż `RANK_MAX_LENGTH` — nie zapisywać, lecz przepisać całą listę `rebalanceRanks` w tej samej transakcji; do ustalenia: zbiorcze zdarzenie socket po rebalansowaniu,
+   - `RankError` mapować na HTTP 400/409 (obsługa w `error-handler`),
+   - API przyjmuje identyfikatory sąsiadów lub docelowy indeks, nie surowe rank; klucz liczy serwer z zapisanych sąsiadów,
+   - jeden test integracyjny na prawdziwym PostgreSQL: `ORDER BY rank COLLATE "C"` zgodne z porządkiem z `shared`.
 3. **M2c** — kolumny z kategorią (`BACKLOG`/`TODO`/`IN_PROGRESS`/`DONE`) i limitem WIP.
 4. **M2d** — frontend tablic i kolumn.
 5. Od M3 każde przeniesienie karty zapisuje `CardTransition` (ADR-020) — warunek analityki przepływu (M6).
