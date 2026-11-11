@@ -3,7 +3,7 @@
 _Aktualizacja: 2026-11-11_
 
 ## W skrócie
-M0, M1a i M1b są zmergowane do `main` (ostatnio PR #3, #4, #5). M2a (własny LexoRank w `packages/shared` + benchmark) jest zaimplementowane i zatwierdzone w przeglądzie kodu (1 runda); zmiany są na gałęzi `feat/m2a-lexorank` i nie są jeszcze zacommitowane — przed commitem trzeba uruchomić testy API (`pnpm db:up && pnpm test`), bo nie były uruchamiane (Docker wyłączony; kod API bez zmian).
+M0, M1a, M1b i M2a są zmergowane do `main` (ostatnio PR #3–#6). M2b (tablice, członkowie i role: WF-BOARD-01..03 ✅) jest zaimplementowane i zatwierdzone w przeglądzie kodu (1 runda); zmiany są na gałęzi `feat/m2b-boards-members` i nie są jeszcze zacommitowane. Następny etap: M2c (kolumny z kategorią i limitem WIP).
 
 ## Gotowe
 - Dokumentacja stosu, organizacji pracy i decyzji (ADR-001–024).
@@ -27,25 +27,32 @@ M0, M1a i M1b są zmergowane do `main` (ostatnio PR #3, #4, #5). M2a (własny Le
   - klucz: ułamek w systemie 62-cyfrowym (`0-9A-Za-z`), niepusty, nie kończy się na `0`; porządek leksykograficzny = liczbowy = `COLLATE "C"` w PostgreSQL,
   - testy: 198 nowych (`keys`, `lexorank`, `rebalance`, `collation`), w tym zgodność z wyrocznią BigInt i dowód różnicy względem `localeCompare`,
   - benchmark `pnpm --filter @streamline/shared bench` (`pnpm build && node bench/rank.bench.ts`, natywne usuwanie typów w Node 24, działa na `dist`, bez nowych zależności); wyniki: `docs/thesis-notes/rozdzial-5.md`, sekcja 5.3.
-- Sprawdzone lokalnie (M2a): `lint`, `typecheck`, `format:check`, `build`, `test` — shared 226, web 77; testy API (77) nie uruchomione w tej sesji.
-- Sprawdzone wcześniej (M1b): `lint`, `typecheck`, `test` (shared 28, api 77, web 77), `format:check`, `build` web (ostrzeżenie: jeden fragment 537 kB).
+- M2b (tablice, członkowie, role; WF-BOARD-01..03 ✅; ADR-025–027), gałąź `feat/m2b-boards-members`, niezacommitowane:
+  - modele `Board`, `BoardMember`, enum `BoardRole` (`OWNER`/`ADMIN`/`MEMBER`/`VIEWER`), migracja `20261111143833_boards_members` z ręcznym częściowym indeksem unikalnym `BoardMember_one_owner_per_board` (najwyżej jeden `OWNER` na tablicę; co najmniej jednego pilnuje serwis) — `docs/DATABASE.md`,
+  - endpointy `GET/POST /boards`, `GET/PATCH/DELETE /boards/:boardId`, `GET/POST /boards/:boardId/members`, `PATCH/DELETE /boards/:boardId/members/:userId` (usunięcie siebie = opuszczenie tablicy) — `docs/API.md`,
+  - `packages/shared`: `schemas/board.ts` (schematy, `BOARD_ERROR_CODES`: `USER_NOT_FOUND`, `ALREADY_MEMBER`, `OWNER_CANNOT_LEAVE`), `permissions.ts` (`BOARD_ACTIONS`, `BOARD_PERMISSIONS`, `hasBoardPermission`, `canManageMember`, `canLeaveBoard`),
+  - API: `ForbiddenError`, opcjonalne kody domenowe w `NotFoundError`/`ConflictError`, `repositories/prisma-errors.ts`, repozytoria `board` i `board-member` (warunkowe `UPDATE`/`DELETE` z `role <> 'OWNER'`), `board-access.service`, `board.service` (ponownie sprawdza uprawnienia), middleware `requireBoardPermission(action, { param })` zapisujące `res.locals.boardMembership` — `docs/ARCHITECTURE.md`,
+  - dwuwarstwowa kontrola ról (ADR-025), 404 dla nie-członków i 409 przy opuszczaniu przez właściciela (ADR-026), inwariant jednego właściciela (ADR-027); brak zdarzeń Socket.io,
+  - nowe testy: jednostkowe i schematy w `shared`, serwis, middleware, integracyjne `board.routes.test.ts`.
+- Sprawdzone lokalnie (M2b): `lint`, `typecheck`, `test`, `format:check` — shared 316, api 193, web 77 (powtórzone w przeglądzie kodu); testy API wymagają działającej bazy.
+- Sprawdzone wcześniej (M1b): `build` web (ostrzeżenie: jeden fragment 537 kB).
 
 ## W toku
-- —
+- M2b oczekuje na commit i PR (commit tylko na wyraźną prośbę).
 
 ## Kolejne kroki
 Zakres i priorytety: `docs/REQUIREMENTS.md`; plan: `docs/WORKFLOW.md`, sekcja 7.
-1. **Zatwierdzenie M2a**: `pnpm db:up && pnpm test`, następnie commit i PR (commit tylko na wyraźną prośbę).
-2. **M2b** — tablice, członkowie i role zgodnie z macierzą uprawnień (`REQUIREMENTS.md`, sekcja 2). Przeniesione z M2a (kontrakt użycia `rank`):
+1. **Zatwierdzenie M2b**: commit i PR.
+2. **M2c** — kolumny z kategorią (`BACKLOG`/`TODO`/`IN_PROGRESS`/`DONE`) i limitem WIP; trasy zagnieżdżone `/boards/:boardId/columns` z `Router({ mergeParams: true })` i `requireBoardPermission('column:write' | 'column:settings')`. Kontrakt użycia `rank` (dotyczy kolumn i kart; M2b nie używał `rank`, więc pozostaje do zrealizowania tutaj i w M3):
    - kolumna `rank` jako tekst z `COLLATE "C"` (inaczej `ORDER BY` w PostgreSQL da inną kolejność niż `<` w JS dla mieszanej wielkości liter),
    - unikalność (kontener, `rank`) + ponowienie przy kolizji albo blokada wierszy — `rankBetween` jest deterministyczne, więc równoległe wstawienia w tę samą lukę dają ten sam klucz,
    - gdy wynik dłuższy niż `RANK_MAX_LENGTH` — nie zapisywać, lecz przepisać całą listę `rebalanceRanks` w tej samej transakcji; do ustalenia: zbiorcze zdarzenie socket po rebalansowaniu,
    - `RankError` mapować na HTTP 400/409 (obsługa w `error-handler`),
    - API przyjmuje identyfikatory sąsiadów lub docelowy indeks, nie surowe rank; klucz liczy serwer z zapisanych sąsiadów,
    - jeden test integracyjny na prawdziwym PostgreSQL: `ORDER BY rank COLLATE "C"` zgodne z porządkiem z `shared`.
-3. **M2c** — kolumny z kategorią (`BACKLOG`/`TODO`/`IN_PROGRESS`/`DONE`) i limitem WIP.
-4. **M2d** — frontend tablic i kolumn.
-5. Od M3 każde przeniesienie karty zapisuje `CardTransition` (ADR-020) — warunek analityki przepływu (M6).
+3. **M2d** — frontend tablic i kolumn (użyć `hasBoardPermission` z `shared` do ukrywania kontrolek).
+4. Od M3 każde przeniesienie karty zapisuje `CardTransition` (ADR-020) — warunek analityki przepływu (M6).
+5. WF-BOARD-04 (przekazanie własności): akcja `board:transfer` jest w macierzy uprawnień, ale endpointu jeszcze nie ma — do zrobienia przed możliwością opuszczenia tablicy przez właściciela.
 
 ### Uwagi dla kolejnych etapów
 - Żądania chronione wykonywać przez instancję `api` z `apps/web/src/lib/api.ts` (obsługuje Bearer i odświeżanie); żądań do `/auth/*` nie opakowywać własnym odświeżaniem.
@@ -57,7 +64,7 @@ Zakres i priorytety: `docs/REQUIREMENTS.md`; plan: `docs/WORKFLOW.md`, sekcja 7.
 3. Skopiować `.env.example` do `.env` (root, dla compose), `apps/api/.env.example` do `apps/api/.env`, `apps/web/.env.example` do `apps/web/.env`.
 4. W `apps/api/.env` ustawić `JWT_ACCESS_SECRET` (wymagany, min. 32 znaki; API nie wystartuje bez niego). Przykład: `node -e "console.log(require('node:crypto').randomBytes(48).toString('base64url'))"`.
 5. `pnpm db:up` (PostgreSQL w Dockerze).
-6. `pnpm --filter @streamline/api db:migrate` — stosuje migracje (istnieje już `20261111010926_auth_users_refresh_tokens`).
+6. `pnpm --filter @streamline/api db:migrate` — stosuje migracje (istnieją migracje `20261111010926_auth_users_refresh_tokens` i `20261111143833_boards_members`).
 7. `pnpm dev` — API na `:4000`, web na `:5173` (proxy `/api` do API).
 
 Kontrole: `pnpm lint && pnpm typecheck && pnpm test`, `pnpm format:check`, `pnpm build`. Testy API wymagają działającej bazy (`pnpm db:up`); baza `streamline_test` jest tworzona i migrowana automatycznie.
@@ -81,6 +88,12 @@ Zmienne środowiskowe uwierzytelniania (`apps/api/.env.example`): `JWT_ACCESS_SE
 - `409 CONFLICT` przy rejestracji ujawnia istnienie konta (świadomy kompromis, ograniczony limitem żądań).
 - Licznik ograniczania żądań jest w pamięci procesu (jedna instancja); okno łaski rotacji używa zegara aplikacji (również założenie jednej instancji).
 - Okno łaski opóźnia wykrycie kradzieży, gdy atakujący odświeży token przed klientem (ADR-013).
+
+- M2b: wyścig przy degradacji — rola jest sprawdzana w middleware, a mutacja wykonuje się później; równoległa zmiana roli wywołującego może pozwolić na jedną operację z już cofniętym uprawnieniem (właściciela chronią warunkowe zapytania, pozostałych nie).
+- M2b: gdy w przyszłości dojdzie usuwanie kont, kaskada usunie członkostwo właściciela i zostawi tablicę bez właściciela (indeks pilnuje tylko „najwyżej jeden”); potrzebna reguła (np. przekazanie własności lub usunięcie tablicy).
+- M2b: `POST /boards` przez użytkownika usuniętego po wydaniu tokena dałoby 500 (naruszenie FK) — obecnie nieosiągalne, bo nie ma usuwania kont.
+- M2b: `Board.updatedAt` zmienia się tylko przy zmianie nazwy (nie przy zmianach członków ani zawartości).
+- M2b (drobne po przeglądzie): komentarz w `schema.prisma` mówi „exactly one” owner, a poprawnie jest „at most one”; `canManageMember` nie jest używane przez API (reguła `role <> OWNER` żyje w repozytorium — utrzymywać zgodność); parametr `:userId` nie jest walidowany schematem Zod (nieznany id daje 404 członka).
 
 ## Przeszkody / otwarte pytania
 - Nie potwierdzono przebiegu CI na GitHub (w tym `DATABASE_URL_TEST` z usługą PostgreSQL); sprawdzić tagi akcji (`checkout@v7`, `pnpm/action-setup@v6`, `setup-node@v7`) oraz działanie `DATABASE_URL_TEST` z usługą PostgreSQL.

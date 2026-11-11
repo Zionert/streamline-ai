@@ -83,3 +83,9 @@ Vitest: `packages/shared` — 28 testów, `apps/api` — 77, `apps/web` — 5 (�
 - Długości kluczy pozostają niewielkie: maksimum 27 znaków (poniżej `RANK_MAX_LENGTH` = 32), średnio ok. 3 znaki po rebalansowaniu.
 - Jedyną linią bazową jest gęsta reindeksacja całkowitoliczbowa. Pozycje zmiennoprzecinkowe odrzucono, bo tracą precyzję po ok. 50 kolejnych połowieniach przedziału; pozycje całkowitoliczbowe z odstępami nadal wymagają okresowej renumeracji, czyli w praktyce tego samego rebalansowania, tylko z mniejszym zapasem.
 - Ograniczenia: pomiar nie obejmuje bazy danych, sieci ani współbieżności; wyniki z jednej maszyny i jednego ziarna.
+
+## 5.x Testy tablic, członków i ról (M2b)
+- Vitest: `packages/shared` — 316 testów (z 226), `apps/api` — 193 (z 77), `apps/web` — 77; `lint`, `typecheck`, `format:check` bez błędów.
+- `shared`: `permissions.test.ts` (macierz uprawnień, `canManageMember`, `canLeaveBoard`), `schemas/board.test.ts` (schematy tablic i członków).
+- `apps/api`: `board.service.test.ts` (reguły serwisu), `require-board-permission.test.ts` (middleware), integracyjne `board.routes.test.ts` na prawdziwym PostgreSQL (Supertest) obejmujące kody 400/401/403/404/409, m.in. identyczność 404 dla nie-członka i nieistniejącej tablicy, kolejność sprawdzeń (rola przed walidacją), 409 `OWNER_CANNOT_LEAVE`, 403 przy zmianie i usunięciu `OWNER`, `ALREADY_MEMBER`.
+- Przegląd kodu: zatwierdzony w 1 rundzie; uwagi drobne (komentarz w schemacie, nieużywane `canManageMember`, brak walidacji `:userId`) odnotowane w stanie projektu.

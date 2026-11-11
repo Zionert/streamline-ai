@@ -1,12 +1,14 @@
 # Baza danych
 
-Stan: M1a — modele `User` i `RefreshToken`, jedna migracja. Wstępny model docelowy: `docs/TECH_STACK.md`, sekcja 5.
+Stan: M2b — modele `User`, `RefreshToken`, `Board`, `BoardMember`, enum `BoardRole`; dwie migracje. Wstępny model docelowy: `docs/TECH_STACK.md`, sekcja 5.
 
 ## Diagram ER
 ```mermaid
 erDiagram
   User ||--o{ RefreshToken : "ma"
   RefreshToken |o--o| RefreshToken : "replacedBy (rotacja)"
+  User ||--o{ BoardMember : "jest członkiem"
+  Board ||--o{ BoardMember : "ma"
   User {
     string id PK
     string email UK
@@ -23,6 +25,20 @@ erDiagram
     datetime revokedAt
     string replacedById FK
     datetime createdAt
+  }
+  Board {
+    string id PK
+    string name
+    datetime createdAt
+    datetime updatedAt
+  }
+  BoardMember {
+    string id PK
+    string boardId FK
+    string userId FK
+    BoardRole role
+    datetime createdAt
+    datetime updatedAt
   }
 ```
 
@@ -46,7 +62,7 @@ erDiagram
 | `createdAt` | DateTime | domyślnie `now()` |
 | `updatedAt` | DateTime | `@updatedAt` |
 
-Relacja: `refreshTokens` (1:N). Indeks: unikalny `User_email_key`.
+Relacje: `refreshTokens` (1:N), `memberships` (1:N, `BoardMember`). Indeks: unikalny `User_email_key`.
 
 ### RefreshToken
 | Pole | Typ | Uwagi |
@@ -61,10 +77,38 @@ Relacja: `refreshTokens` (1:N). Indeks: unikalny `User_email_key`.
 
 Indeksy: unikalne `tokenHash` i `replacedById`, zwykły `userId`. Para `replacedById` ustawione i `revokedAt` niepuste odróżnia token wymieniony przy rotacji od unieważnionego wylogowaniem — to podstawa wykrywania ponownego użycia (ADR-013).
 
+### BoardRole (enum)
+`OWNER`, `ADMIN`, `MEMBER`, `VIEWER` (kolejność deklaracji decyduje o sortowaniu członków). Uprawnienia ról: `packages/shared/src/permissions.ts` (macierz w `docs/API.md`).
+
+### Board
+| Pole | Typ | Uwagi |
+|---|---|---|
+| `id` | String | PK, `cuid()` |
+| `name` | String | 1–100 znaków (walidacja Zod) |
+| `createdAt` | DateTime | domyślnie `now()` |
+| `updatedAt` | DateTime | `@updatedAt`; zmienia się tylko przy zmianie nazwy |
+
+Relacja: `members` (1:N).
+
+### BoardMember
+| Pole | Typ | Uwagi |
+|---|---|---|
+| `id` | String | PK, `cuid()` |
+| `boardId` | String | FK → `Board.id`, `onDelete: Cascade` |
+| `userId` | String | FK → `User.id`, `onDelete: Cascade` |
+| `role` | BoardRole | |
+| `createdAt` | DateTime | domyślnie `now()`; data dołączenia |
+| `updatedAt` | DateTime | `@updatedAt` |
+
+Indeksy: unikalny `BoardMember_boardId_userId_key` (`boardId`, `userId`), zwykły `BoardMember_userId_idx`, oraz **częściowy unikalny** `BoardMember_one_owner_per_board` na `boardId` z warunkiem `WHERE "role" = 'OWNER'` — najwyżej jeden właściciel na tablicę. Indeks częściowy jest dopisany ręcznie w SQL migracji (Prisma go nie wyraża); co najmniej jednego właściciela zapewnia serwis (tablicę tworzy z właścicielem, właściciel nie może odejść ani zostać zmieniony). Patrz ADR-027.
+
+Kaskady: usunięcie tablicy usuwa jej członkostwa; usunięcie użytkownika usuwa jego członkostwa (przy dodaniu usuwania kont trzeba zadbać o tablice bez właściciela).
+
 ## Migracje
 | Migracja | Zawartość |
 |---|---|
 | `20261111010926_auth_users_refresh_tokens` | tabele `User` i `RefreshToken`, indeksy, klucze obce |
+| `20261111143833_boards_members` | enum `BoardRole`, tabele `Board` i `BoardMember`, indeksy (w tym częściowy `BoardMember_one_owner_per_board`), klucze obce z kaskadą |
 
 Polecenia: `pnpm --filter @streamline/api db:migrate` (tworzy i stosuje migrację w środowisku deweloperskim), `prisma migrate deploy` (stosuje istniejące migracje; używane przez testy).
 

@@ -2,6 +2,14 @@
 
 Najnowsze wpisy na górze.
 
+## 2026-11-11 — Nazar — M2b: tablice, członkowie i role
+- Prisma: `Board`, `BoardMember`, enum `BoardRole`; migracja `20261111143833_boards_members` z ręcznym częściowym indeksem unikalnym `BoardMember_one_owner_per_board`.
+- `packages/shared`: `schemas/board.ts`, `permissions.ts` (macierz uprawnień) wraz z testami; eksport w `index.ts`.
+- API: `ForbiddenError` i kody domenowe w błędach (`errors/app-error.ts`), `repositories/prisma-errors.ts`, `board.repository.ts`, `board-member.repository.ts`, `user.repository.ts`, `board-access.service.ts`, `board.service.ts`, `require-board-permission.ts`, `board.controller.ts`, `board.routes.ts`, `app.ts`, `routes/index.ts`, `test/helpers.ts`; testy: `board.service.test.ts`, `require-board-permission.test.ts`, `board.routes.test.ts`.
+- Przegląd kodu: 1 runda, zatwierdzone. Testy: shared 316, api 193, web 77.
+- Dokumentacja: API, DATABASE, ARCHITECTURE, ADR-025–027, notatki do rozdz. 3–5, stan projektu (m.in. kontrakt użycia `rank` przeniesiony do M2c).
+- Dług techniczny: patrz `docs/PROJECT_STATE.md`. Zmiany niezacommitowane.
+
 ## 2026-11-11 — Nazar — M2a: własny LexoRank i benchmark
 - `packages/shared/src/rank/`: klucze base-62 (`keys.ts`), `rankBetween`/`rankAfter`/`rankBefore`/`rankSequenceBetween`/`rankFirst` (`lexorank.ts`), `needsRebalance`/`rebalanceRanks` (`rebalance.ts`), `index.ts`; eksport z `packages/shared/src/index.ts`.
 - Testy: `keys/lexorank/rebalance/collation.test.ts` (198 nowych, shared 226); `packages/shared/test-utils/prng.ts` (mulberry32).

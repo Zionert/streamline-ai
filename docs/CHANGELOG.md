@@ -4,6 +4,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/).
 
 ## [Unreleased]
 ### Dodano
+- Tablice, członkowie i role (M2b, WF-BOARD-01..03): `GET/POST /boards`, `GET/PATCH/DELETE /boards/:boardId`, `GET/POST /boards/:boardId/members`, `PATCH/DELETE /boards/:boardId/members/:userId` (usunięcie siebie = opuszczenie tablicy).
+- Modele `Board`, `BoardMember`, enum `BoardRole` i migracja `20261111143833_boards_members` z częściowym indeksem unikalnym (najwyżej jeden `OWNER` na tablicę).
+- `packages/shared`: schematy tablic i członków, `BOARD_ERROR_CODES`, macierz uprawnień (`BOARD_PERMISSIONS`, `hasBoardPermission`, `canManageMember`, `canLeaveBoard`).
+- API: `ForbiddenError`, middleware `requireBoardPermission`, serwisy `board` i `board-access`, repozytoria `board` i `board-member`.
+- Testy: shared 316, api 193, web 77.
 - Własna implementacja LexoRank w `packages/shared` (M2a): `rankFirst`, `rankBetween`, `rankAfter`, `rankBefore`, `rankSequenceBetween`, `isValidRank`, `assertValidRank`, `rankSchema`, `RankError`, `RANK_MAX_LENGTH` (32), `needsRebalance`, `rebalanceRanks`.
 - 198 nowych testów jednostkowych (shared: 226 łącznie), w tym zgodność z wyrocznią BigInt i kolejnością bajtową (`COLLATE "C"`).
 - Benchmark `pnpm --filter @streamline/shared bench`: LexoRank vs reindeksacja całkowitoliczbowa O(n).
@@ -26,6 +31,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/).
 - Test dymny `@hello-pangea/dnd` z React 19.
 
 ### Zmieniono
+- `NotFoundError` i `ConflictError` przyjmują opcjonalny kod domenowy (domyślnie `NOT_FOUND` / `CONFLICT`).
 - Routing frontendu: `/` jest trasą chronioną w układzie `AppLayout`; `/login` i `/register` dostępne tylko dla niezalogowanych.
 - `createApp` przyjmuje `{ config, logger, db }` — klient bazy jest wstrzykiwany z `server.ts`.
 - CI przekazuje `DATABASE_URL_TEST` zamiast `DATABASE_URL`.

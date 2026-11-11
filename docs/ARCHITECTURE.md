@@ -1,6 +1,6 @@
 # Architektura
 
-Stan: M1b — szkielet oraz uwierzytelnianie (backend i frontend). Uzasadnienia decyzji: `docs/DECISIONS.md`.
+Stan: M2b — szkielet, uwierzytelnianie oraz tablice, członkowie i role. Uzasadnienia decyzji: `docs/DECISIONS.md`.
 
 ## Moduły
 
@@ -15,12 +15,12 @@ flowchart LR
 ### packages/shared
 Schematy Zod (`healthResponseSchema`, `errorResponseSchema`, uwierzytelnianie w `schemas/auth.ts`), `WS_EVENTS` (robocze), `boardRoom()`. Udostępniany przez warunek `@streamline/source` (ADR-005).
 
-Moduł `src/rank/` (M2a, ADR-022–024): `keys.ts` (alfabet, `isValidRank`, `RankError`, `rankSchema`, `RANK_MAX_LENGTH`), `lexorank.ts` (`rankFirst`, `rankBetween`, `rankAfter`, `rankBefore`, `rankSequenceBetween`), `rebalance.ts` (`needsRebalance`, `rebalanceRanks`), `index.ts`. Funkcje są czyste i bez zależności; klucze wyznacza wyłącznie serwer na podstawie zapisanych sąsiadów. Poza `src/`: `test-utils/prng.ts` (generator mulberry32 do testów) i `bench/rank.bench.ts` (benchmark).
+Moduł `src/rank/` (M2a, ADR-022–024): `keys.ts` (alfabet, `isValidRank`, `RankError`, `rankSchema`, `RANK_MAX_LENGTH`), `lexorank.ts` (`rankFirst`, `rankBetween`, `rankAfter`, `rankBefore`, `rankSequenceBetween`), `rebalance.ts` (`needsRebalance`, `rebalanceRanks`), `index.ts`. Funkcje są czyste i bez zależności; klucze wyznacza wyłącznie serwer na podstawie zapisanych sąsiadów. Moduł tablic (M2b): `schemas/board.ts` (schematy, typy, `BOARD_ERROR_CODES`) i `permissions.ts` (`BOARD_ACTIONS`, `BOARD_PERMISSIONS`, `hasBoardPermission`, `canManageMember`, `canLeaveBoard`) — czysta macierz uprawnień współdzielona przez API i (od M2d) frontend. Poza `src/`: `test-utils/prng.ts` (generator mulberry32 do testów) i `bench/rank.bench.ts` (benchmark).
 
 ### apps/api (Controller → Service → Repository)
 - `app.ts` — `createApp({ config, logger, db })` (helmet, cors, pino-http, JSON 1 MB, cookie-parser, trasy, not-found, error-handler); zależności (repozytoria, serwisy, `requireAuth`) składane ręcznie; `server.ts` — nasłuch i łagodne zamykanie.
 - `config/env.ts` — walidacja Zod: `NODE_ENV`, `PORT` (4000), `DATABASE_URL`, `CORS_ORIGIN` (lista po przecinku, domyślnie `http://localhost:5173`), `LOG_LEVEL` oraz zmienne uwierzytelniania (`docs/PROJECT_STATE.md`).
-- `routes/`, `controllers/`, `services/`, `repositories/` (`db.ts`, `user`, `refresh-token`), serwisy `auth`, `token` (jose, SHA-256), `password` (bcryptjs), middleware `require-auth` i `rate-limit`, `errors/app-error.ts`, `middleware/`.
+- `routes/` (`auth`, `board`, `health`), `controllers/`, `services/`, `repositories/` (`db.ts`, `user`, `refresh-token`, `board`, `board-member`, `prisma-errors.ts`), serwisy `auth`, `token` (jose, SHA-256), `password` (bcryptjs), middleware `require-auth`, `require-board-permission` i `rate-limit`, serwisy `board` i `board-access`, `errors/app-error.ts`, `middleware/`.
 
 ### apps/web
 Tailwind 4 (`@tailwindcss/vite`), shadcn/ui (new-york, neutral; `input`, `label`, `card` pisane ręcznie w tym samym stylu). Serwer deweloperski Vite przekazuje `/api` do API.
@@ -81,6 +81,36 @@ sequenceDiagram
 ```
 
 Błędy sieci, 5xx i 429 podczas odświeżania nie kończą sesji. Wynik odświeżenia rozpoczętego w poprzedniej sesji (inny `sessionEpoch`) jest odrzucany. Wylogowanie czeka na zakończenie trwającego odświeżenia (`waitForPendingRefresh`), wysyła `POST /auth/logout` i zawsze czyści stan lokalny.
+
+### Kontrola uprawnień do tablicy (M2b, ADR-025–027)
+
+Dwie warstwy: (1) czysta macierz `BOARD_PERMISSIONS` w `shared`; (2) w API middleware `requireBoardPermission(action)` ładuje członkostwo (`BoardAccessService.require`) i zapisuje je w `res.locals.boardMembership`; serwis `board.service` dodatkowo wywołuje `assertBoardPermission`, więc poprawność nie zależy tylko od konfiguracji tras. Mutacje członków są warunkowe (`role <> OWNER`) w repozytorium.
+
+```mermaid
+sequenceDiagram
+  participant C as Klient
+  participant R as requireAuth + requireBoardPermission
+  participant S as BoardService
+  participant D as PostgreSQL
+  C->>R: PATCH /boards/:id/members/:userId (Bearer)
+  R->>D: znajdź członkostwo (boardId, userId z tokena)
+  alt brak członkostwa
+    R-->>C: 404 NOT_FOUND (jak dla nieistniejącej tablicy)
+  else rola bez uprawnienia
+    R-->>C: 403 FORBIDDEN
+  else dozwolone
+    R->>S: handler z res.locals.boardMembership
+    S->>S: assertBoardPermission (ponowne sprawdzenie)
+    S->>D: UPDATE ... WHERE role <> 'OWNER'
+    alt zaktualizowano wiersz
+      S-->>C: 200 member
+    else 0 wierszy
+      S-->>C: 404 (brak członka) lub 403 (OWNER)
+    end
+  end
+```
+
+Walidacja ciała (Zod) następuje po sprawdzeniu roli. Zdarzenia Socket.io dla tablic i członków nie są jeszcze emitowane.
 
 Docelowy przepływ (ADR-003): UI → REST → baza → zdarzenie Socket.io do pokoju `board:<id>` → pozostali klienci.
 

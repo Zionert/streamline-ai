@@ -15,3 +15,10 @@
 - Spójność sesji: „epoka sesji” odrzuca wyniki odświeżania z poprzedniej sesji; wylogowanie czeka na odświeżenie w toku (ADR-017).
 - Trasy: komponenty `ProtectedRoute` i `GuestRoute`; adres powrotny po zalogowaniu akceptowany tylko, jeśli jest ścieżką wewnątrz aplikacji (ochrona przed otwartym przekierowaniem).
 - Walidacja formularzy tymi samymi schematami Zod co backend (`loginSchema`, `registerSchema`).
+
+## 3.x Projekt modelu ról i uprawnień do tablicy (M2b)
+- Role: `OWNER`, `ADMIN`, `MEMBER`, `VIEWER`; uprawnienia opisuje macierz akcja → dozwolone role (`BOARD_PERMISSIONS`, `packages/shared/src/permissions.ts`), zgodna z macierzą z `docs/REQUIREMENTS.md`. Macierz jest czystą strukturą danych, więc ta sama reguła obsługuje API i interfejs oraz da się ją testować jednostkowo.
+- Dwie warstwy egzekwowania (ADR-025): middleware `requireBoardPermission` (wczesne odrzucenie) i ponowne sprawdzenie w serwisie (obrona w głąb).
+- Ochrona przed wyliczaniem zasobów (ADR-026): nie-członek dostaje 404 identyczne jak dla nieistniejącej tablicy; 403 tylko dla członka bez uprawnienia.
+- Inwariant „jeden właściciel” (ADR-027): częściowy indeks unikalny w PostgreSQL + zapytania warunkowe; właściciel nie może opuścić tablicy (409), co wymaga przyszłej akcji przekazania własności (`board:transfer`).
+- Model danych: diagram ER w `docs/DATABASE.md` (`Board`, `BoardMember`, relacja wiele-do-wielu `User`–`Board` z atrybutem roli).

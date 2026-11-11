@@ -1,6 +1,6 @@
 # API
 
-Stan: M1a — `GET /health` oraz uwierzytelnianie (`/auth/*`). Kolejne endpointy dochodzą z funkcjonalnościami.
+Stan: M2b — `GET /health`, uwierzytelnianie (`/auth/*`) oraz tablice i członkowie (`/boards/*`). Kolejne endpointy dochodzą z funkcjonalnościami.
 
 ## Konwencje
 - Ścieżki w tym dokumencie są podane względem korzenia API (np. `/auth/login`). Przeglądarka używa prefiksu `/api` (np. `/api/auth/login`) — serwer Vite przekazuje `/api` do API (`VITE_API_PROXY_TARGET`) i usuwa prefiks.
@@ -102,5 +102,88 @@ curl -i -X POST http://localhost:4000/auth/register -H 'Content-Type: applicatio
 ### Middleware `requireAuth`
 `apps/api/src/middleware/require-auth.ts`: wymaga nagłówka `Authorization: Bearer <token>`; weryfikuje podpis (jose, dozwolony tylko algorytm HS256) oraz claimy `sub` i `exp`; ustawia `req.userId`. Każdy błąd daje 401 `UNAUTHORIZED`.
 
+## Tablice i członkowie (`/boards/*`)
+
+Implementacja: `apps/api/src/routes/board.routes.ts`, `controllers/board.controller.ts`, `services/board.service.ts`, `services/board-access.service.ts`, `middleware/require-board-permission.ts`. Schematy i uprawnienia: `packages/shared/src/schemas/board.ts`, `permissions.ts`. Wszystkie trasy wymagają access tokena (`requireAuth`).
+
+### Role i uprawnienia
+Role: `OWNER`, `ADMIN`, `MEMBER`, `VIEWER`. Macierz akcji (`BOARD_PERMISSIONS`):
+
+| Akcja | OWNER | ADMIN | MEMBER | VIEWER |
+|---|---|---|---|---|
+| `board:view` | tak | tak | tak | tak |
+| `board:rename`, `members:manage`, `column:settings` | tak | tak | nie | nie |
+| `column:write`, `card:write`, `ai:use` | tak | tak | tak | nie |
+| `board:delete`, `board:transfer` | tak | nie | nie | nie |
+
+Akcje `column:*`, `card:write`, `ai:use` i `board:transfer` są zdefiniowane, ale nie mają jeszcze endpointów.
+
+### Zasady dostępu i kody błędów
+- Użytkownik niebędący członkiem tablicy dostaje 404 `NOT_FOUND` („Board not found”) — identycznie jak dla nieistniejącej tablicy (nie ujawniamy istnienia; ADR-026).
+- Członek bez wymaganej roli dostaje 403 `FORBIDDEN`. Rola jest sprawdzana przed walidacją ciała żądania.
+- Rola `OWNER` nie może być nadana przez API (ciało z `role: "OWNER"` daje 400 `VALIDATION_ERROR`); właściciel jest ustawiany przy tworzeniu tablicy.
+- `ADMIN` może zarządzać innymi `ADMIN` oraz zmienić własną rolę na niższą; nikt nie może zmienić ani usunąć `OWNER` (403).
+
+| Status | `error.code` | Kiedy |
+|---|---|---|
+| 400 | `VALIDATION_ERROR` | nieprawidłowe ciało żądania |
+| 401 | `UNAUTHORIZED` | brak/nieprawidłowy access token |
+| 403 | `FORBIDDEN` | rola nie pozwala na akcję; zmiana lub usunięcie `OWNER` |
+| 404 | `NOT_FOUND` | tablica nie istnieje lub brak członkostwa; członek nie istnieje |
+| 404 | `USER_NOT_FOUND` | brak konta o podanym e-mailu (dodawanie członka) |
+| 409 | `ALREADY_MEMBER` | użytkownik już należy do tablicy (także przy równoległych żądaniach) |
+| 409 | `OWNER_CANNOT_LEAVE` | właściciel próbuje opuścić tablicę |
+
+### Obiekty odpowiedzi
+- `Board`: `{ id, name, createdAt, updatedAt, role }` — `role` to rola wywołującego.
+- `BoardMember`: `{ userId, name, email, role, joinedAt }`.
+
+### GET /boards
+- Uprawnienia: zalogowany. Odpowiedź 200: `{ "boards": Board[] }` — tablice wywołującego, od najnowszej (`createdAt` malejąco, remis rozstrzyga `id`).
+
+### POST /boards
+- Uprawnienia: zalogowany. Ciało (`createBoardSchema`): `name` (przycinane, 1–100 znaków).
+- Odpowiedź 201: `{ "board": Board }` z `role: "OWNER"`; twórca zostaje właścicielem.
+- Błędy: 400, 401.
+```bash
+curl -X POST http://localhost:4000/boards -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"name":"Sprint 1"}'
+```
+
+### GET /boards/:boardId
+- Uprawnienia: `board:view` (każdy członek). Odpowiedź 200: `{ "board": Board }`. Błędy: 401, 404.
+
+### PATCH /boards/:boardId
+- Uprawnienia: `board:rename` (OWNER, ADMIN). Ciało (`updateBoardSchema`): `name` (1–100 znaków).
+- Odpowiedź 200: `{ "board": Board }`. Błędy: 400, 401, 403, 404.
+
+### DELETE /boards/:boardId
+- Uprawnienia: `board:delete` (OWNER). Odpowiedź 204 bez ciała; członkostwa są usuwane kaskadowo. Błędy: 401, 403, 404.
+
+### GET /boards/:boardId/members
+- Uprawnienia: `board:view`. Odpowiedź 200: `{ "members": BoardMember[] }` — według kolejności roli (`OWNER`, `ADMIN`, `MEMBER`, `VIEWER`), potem daty dołączenia.
+
+### POST /boards/:boardId/members
+- Uprawnienia: `members:manage` (OWNER, ADMIN). Ciało (`addBoardMemberSchema`): `email` (jak w rejestracji; użytkownik musi mieć konto), `role` (`ADMIN` | `MEMBER` | `VIEWER`, domyślnie `MEMBER`).
+- Odpowiedź 201: `{ "member": BoardMember }`.
+- Błędy: 400 (m.in. `role: "OWNER"`), 401, 403, 404 (`NOT_FOUND`, `USER_NOT_FOUND`), 409 `ALREADY_MEMBER`.
+```bash
+curl -X POST http://localhost:4000/boards/$BOARD_ID/members -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"email":"anna@example.com","role":"VIEWER"}'
+```
+
+### PATCH /boards/:boardId/members/:userId
+- Uprawnienia: `members:manage`. Ciało (`updateBoardMemberSchema`): `role` (`ADMIN` | `MEMBER` | `VIEWER`).
+- Odpowiedź 200: `{ "member": BoardMember }`. Zmiana jest warunkowa (`role <> OWNER`), więc `OWNER` nie zostanie zmodyfikowany nawet przy równoległych żądaniach.
+- Błędy: 400, 401, 403 (cel to `OWNER`, brak roli), 404 (tablica lub członek).
+
+### DELETE /boards/:boardId/members/:userId
+- Uprawnienia: każdy członek (`board:view`) w przypadku usunięcia siebie (opuszczenie tablicy); usunięcie innej osoby wymaga `members:manage`.
+- Odpowiedź 204 bez ciała.
+- Błędy: 401, 403 (usunięcie innej osoby bez uprawnień lub usunięcie `OWNER`), 404, 409 `OWNER_CANNOT_LEAVE` (właściciel usuwa siebie).
+
+### Middleware `requireBoardPermission`
+`requireBoardPermission(action, { param })` (domyślnie `param = 'boardId'`) działa po `requireAuth`: wczytuje członkostwo wywołującego, zwraca 404 dla nie-członka i 403 przy braku uprawnienia, a członkostwo zapisuje w `res.locals.boardMembership` (odczyt: `getBoardMembership(res)`). Trasy zagnieżdżone wymagają `Router({ mergeParams: true })`. Serwis dodatkowo sprawdza uprawnienia samodzielnie (ADR-025).
+
 ## Zdarzenia Socket.io
-Brak zaimplementowanych zdarzeń. W `packages/shared` zdefiniowano wstępną stałą `WS_EVENTS` (`board:updated`, `column:created`, `card:moved`) oraz funkcję `boardRoom()` (pokój `board:<id>`). Nazwy są robocze i zostaną zatwierdzone razem z funkcjonalnościami.
+Brak zaimplementowanych zdarzeń (endpointy tablic i członków z M2b niczego nie rozgłaszają). W `packages/shared` zdefiniowano wstępną stałą `WS_EVENTS` (`board:updated`, `column:created`, `card:moved`) oraz funkcję `boardRoom()` (pokój `board:<id>`). Nazwy są robocze i zostaną zatwierdzone razem z funkcjonalnościami.

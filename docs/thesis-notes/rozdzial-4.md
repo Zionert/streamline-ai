@@ -49,3 +49,11 @@ Rozróżnienie opiera się na polach `revokedAt` i `replacedById` (ADR-013). Kom
 - **Rebalansowanie.** `rebalanceRanks(n)` wybiera najmniejsze L, że 62^L > n, i przypisuje kluczowi i wartość floor((i+1)·62^L/(n+1)) w arytmetyce całkowitej: 61 elementów → 1 znak, do 3843 → 2, 100 tys. → 3 znaki, ok. 8,5 ms dla 100 tys. Limit `RANK_MAX_LENGTH` = 32; po jego przekroczeniu cała lista jest przepisywana w jednej transakcji.
 - **Kontrakt użycia.** Klucze liczy wyłącznie serwer z zapisanych sąsiadów (API przyjmuje identyfikatory sąsiadów lub indeks docelowy). Funkcja jest deterministyczna, więc równoległe wstawienia w tę samą lukę dają kolizję — potrzebne ograniczenie unikalności (kontener, `rank`) z ponowieniem lub blokada wierszy (M2b). `RankError` mapowany na HTTP 400/409.
 - **Uzasadnienie.** ADR-002, ADR-022–024; pomiary: rozdz. 5.3.
+
+## 4.2.2 Tablice, członkowie i role (M2b)
+- **Warstwy.** Router → kontroler → serwis (`board.service`) → repozytoria (`board`, `board-member`); tylko repozytoria używają Prisma. Zależności składane ręcznie w `createApp`.
+- **Autoryzacja.** `requireBoardPermission('members:manage')` wczytuje członkostwo wywołującego i zapisuje je w `res.locals.boardMembership`; serwis ponownie wywołuje `assertBoardPermission`. Fragment macierzy: `'board:delete': OWNER_ONLY`, `'members:manage': MANAGERS` (`OWNER`, `ADMIN`), `'card:write': CONTRIBUTORS` (bez `VIEWER`).
+- **Operacje na członkach.** Zmiana roli i usunięcie to jedno warunkowe zapytanie (`... WHERE boardId = ? AND userId = ? AND role <> 'OWNER'`); gdy zwróci 0 wierszy, serwis rozróżnia brak członka (404) i próbę ruszenia właściciela (403). Dzięki temu nie ma okna wyścigu między sprawdzeniem a zapisem dla roli `OWNER`.
+- **Właściciel.** Częściowy indeks `UNIQUE ("boardId") WHERE "role" = 'OWNER'` zapobiega drugiemu właścicielowi; tablica powstaje razem z członkostwem `OWNER`. Dodanie istniejącego członka (także równoległe) wykrywane jest przez błąd unikalności i mapowane na 409 `ALREADY_MEMBER`.
+- **Kontrakt HTTP.** Endpointy i kody błędów: `docs/API.md`. Role przypisywalne przez API: `ADMIN`, `MEMBER`, `VIEWER` (`OWNER` odrzucany walidacją Zod).
+- **Znane ograniczenia.** Wyścig między sprawdzeniem roli w middleware a mutacją przy równoległej degradacji wywołującego; brak endpointu przekazania własności.
