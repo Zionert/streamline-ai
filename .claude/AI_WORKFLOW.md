@@ -38,6 +38,8 @@ cd streamline
 git clone --bare https://github.com/Zionert/streamline-ai.git .git-ai
 git --git-dir=.git-ai config core.bare false
 git --git-dir=.git-ai config core.worktree ..
+git --git-dir=.git-ai config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
+git --git-dir=.git-ai fetch -q origin && git --git-dir=.git-ai branch -u origin/main main
 git --git-dir=.git-ai --work-tree=. checkout -f main
 printf '/*\n!/CLAUDE.md\n!/.claude/\n' > .git-ai/info/exclude
 printf 'CLAUDE.md\n.claude/\n.git-ai/\n' >> .git/info/exclude
