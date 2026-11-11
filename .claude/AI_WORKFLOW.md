@@ -33,9 +33,9 @@ Tip: add an alias once: `git config --global alias.ai '!git --git-dir=.git-ai --
 
 ### Setup for the teammate (one time)
 ```bash
-git clone https://github.com/<owner>/streamline.git
+git clone https://github.com/Zionert/streamline.git
 cd streamline
-git clone --bare https://github.com/<owner>/streamline-ai.git .git-ai
+git clone --bare https://github.com/Zionert/streamline-ai.git .git-ai
 git --git-dir=.git-ai config core.bare false
 git --git-dir=.git-ai config core.worktree ..
 git --git-dir=.git-ai --work-tree=. checkout -f main
