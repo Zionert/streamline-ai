@@ -29,3 +29,17 @@
 - Kolejność: pole `rank` (tekst, `COLLATE "C"`) zamiast pozycji całkowitoliczbowych. Klient opisuje miejsce przez sąsiadów (`afterId`/`beforeId`), a klucz liczy serwer z zapisanych sąsiadów (ADR-031); dzięki temu przeniesienie zmienia jeden wiersz, a nie renumeruje listy.
 - Współbieżność: ponieważ `rankBetween` jest deterministyczne, dwa równoległe wstawienia w tę samą lukę dają ten sam klucz. Kolizję wykrywa ograniczenie unikalności `(boardId, rank)` (odraczalne, ADR-028), a żądanie jest ponawiane z aktualnymi danymi. Dwupoziomowa blokada wiersza tablicy (`FOR SHARE` dla wstawień i przeniesień, `FOR NO KEY UPDATE` dla rebalansowania, usunięć i ustawień; ADR-029) godzi równoległość zwykłych zapisów z wyłącznością rebalansowania. Eskalacja do rebalansowania odbywa się przez restart próby, nie przez podniesienie blokady (ADR-030).
 - Diagram sekwencji przeniesienia kolumny: `docs/ARCHITECTURE.md`; diagram ER: `docs/DATABASE.md`.
+
+## 3.x Projekt interfejsu tablic i kolumn oraz synchronizacji stanu klienta (M2d)
+- Stan widoku trzyma jeden magazyn Zustand (`useBoardStore`): lista tablic, otwarta tablica, kolumny i członkowie. Dane trwałe pochodzą wyłącznie z REST; magazyn jest ich lokalną kopią, aktualizowaną optymistycznie tam, gdzie opóźnienie byłoby zauważalne (zmiana nazwy kolumny, przeniesienie).
+- Spóźnione odpowiedzi: każda grupa operacji ma licznik generacji; odpowiedź z poprzedniej generacji (np. po zmianie tablicy lub wylogowaniu) jest odrzucana. Magazyn jest zerowany przy zmianie `sessionEpoch` lub użytkownika.
+- Protokół przeniesienia kolumny (ADR-034, ADR-035): jedno przeniesienie naraz, zawsze oba sąsiedztwa `afterId`/`beforeId`, wycofanie częściowe (tylko przeniesiona kolumna), odświeżenie listy po błędach rozjazdu z serwerem. Ponieważ odpowiedź zawiera jedną kolumnę, a rebalansowanie zmienia klucze innych, klient wykrywa ten przypadek, sprawdzając, czy nowy `rank` mieści się ściśle między lokalnymi sąsiadami.
+- Uprawnienia w interfejsie: kontrolki są ukrywane na podstawie tej samej macierzy (`hasBoardPermission`, `canManageMember`, `canLeaveBoard`) co w API; ukrycie jest wyłącznie wygodą — autorytatywna kontrola pozostaje po stronie serwera (ADR-025).
+- Wybór natywnego `<select>` (ADR-036) i przekierowania `/` → `/boards` (ADR-037).
+
+## 3.x Projekt systemu wizualnego interfejsu (M2e)
+- Interfejs oparto na tokenach projektowych zdefiniowanych jako zmienne CSS (jasny i ciemny motyw) i zmapowanych na tokeny biblioteki shadcn/ui, dzięki czemu komponenty biblioteki przejmują styl bez modyfikacji. Dodano dwa poziomy cieni (`--shadow-card`, `--shadow-raised`), zaokrąglenia 4/6/8 px i font Inter dostarczany lokalnie.
+- Motyw (jasny/ciemny/systemowy) zapisuje wybór w `localStorage`; skrypt w dokumencie HTML ustawia klasę `dark` przed renderowaniem aplikacji, co eliminuje błysk niewłaściwego motywu (ADR-038).
+- Układ responsywny: panel boczny 240 px zwijany, domyślnie zwinięty poniżej 1024 px i prezentowany jako szuflada poniżej 768 px.
+- Dostępność (WNF-05): rozdzielenie `--danger` (wypełnienia) i `--destructive` (tekst) z powodu kontrastu poniżej AA (ADR-042); osobny uchwyt przeciągania kolumny, aby nazwa i licznik pozostały czytelne dla czytników ekranu (ADR-040); menu niemodalne z powrotem fokusu (ADR-041).
+- Komunikaty operacyjne przedstawiane jako toasty ze stałym identyfikatorem, walidacja formularzy pozostaje przy polach (ADR-039).

@@ -28,6 +28,7 @@ Read `CLAUDE.md` and, when needed, `docs/ARCHITECTURE.md` / `docs/DECISIONS.md`.
    The product's own AI assistant feature (WF-AI, ADR-021) is allowed and is not a violation.
    `docs/` is private too: files tracked by the main repo must not reference `docs/` or ADR numbers. Violation = MAJOR.
 8. **Requirements** — behaviour and permissions match `docs/REQUIREMENTS.md` (role matrix, requirement IDs).
+9. **Design** — UI changes follow `docs/DESIGN.md` (tokens instead of hard-coded colors, layout, light/dark theme). Deviation = MINOR, broken dark theme or missing keyboard access = MAJOR.
 
 Run the checks yourself: `pnpm lint && pnpm typecheck && pnpm test`. Failure = BLOCKER.
 

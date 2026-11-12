@@ -1,12 +1,12 @@
 # Stan projektu StreamLine
 
-_Aktualizacja: 2026-11-11_
+_Aktualizacja: 2026-11-12_
 
 ## W skrócie
-M0, M1a, M1b, M2a i M2b są zmergowane do `main` (ostatnio PR #3–#7; M2b to PR #7, commit `60f9c48`). M2c (kolumny: WF-COL-01..04 ✅, tylko backend) jest zaimplementowane i zatwierdzone w przeglądzie kodu (2 rundy); zmiany są na gałęzi `feat/m2c-columns` i nie są jeszcze zacommitowane. Następny etap: M2d (frontend tablic i kolumn).
+M0, M1a, M1b, M2a, M2b i M2c są zmergowane do `main` (M2b: PR #7, `60f9c48`; M2c: PR #8, `643afbd`). M2d (frontend tablic i kolumn; WF-BOARD-01..03 i WF-COL-01..04 mają teraz także interfejs) i M2e (przebudowa wyglądu `apps/web` wg `docs/DESIGN.md`) są zaimplementowane na gałęzi `feat/m2d-boards-frontend` i zatwierdzone w przeglądzie kodu (M2d: 1 runda, M2e: 2 rundy); zmiany obu etapów nie są jeszcze zacommitowane. Następny etap: M3 (karty).
 
 ## Gotowe
-- Dokumentacja stosu, organizacji pracy i decyzji (ADR-001–033).
+- Dokumentacja stosu, organizacji pracy i decyzji (ADR-001–042).
 - M0: monorepo pnpm, API Express 5 z `GET /health`, frontend Vite/React/Tailwind/shadcn, pakiet `shared`, `docker-compose.yml` (PostgreSQL 18), ESLint/Prettier/Husky/lint-staged, Vitest, GitHub Actions CI. `@hello-pangea/dnd` 18.0.1 potwierdzony z React 19.3.1.
 - M1a (backend):
   - modele `User`, `RefreshToken` i migracja `20261111010926_auth_users_refresh_tokens` (`docs/DATABASE.md`),
@@ -34,7 +34,7 @@ M0, M1a, M1b, M2a i M2b są zmergowane do `main` (ostatnio PR #3–#7; M2b to PR
   - API: `ForbiddenError`, opcjonalne kody domenowe w `NotFoundError`/`ConflictError`, `repositories/prisma-errors.ts`, repozytoria `board` i `board-member` (warunkowe `UPDATE`/`DELETE` z `role <> 'OWNER'`), `board-access.service`, `board.service` (ponownie sprawdza uprawnienia), middleware `requireBoardPermission(action, { param })` zapisujące `res.locals.boardMembership` — `docs/ARCHITECTURE.md`,
   - dwuwarstwowa kontrola ról (ADR-025), 404 dla nie-członków i 409 przy opuszczaniu przez właściciela (ADR-026), inwariant jednego właściciela (ADR-027); brak zdarzeń Socket.io,
   - nowe testy: jednostkowe i schematy w `shared`, serwis, middleware, integracyjne `board.routes.test.ts`.
-- M2c (kolumny, tylko backend; WF-COL-01..04 ✅; ADR-028–033), gałąź `feat/m2c-columns`, niezacommitowane:
+- M2c (kolumny, backend; WF-COL-01..04 ✅; ADR-028–033; PR #8, zmergowane):
   - model `Column` (`rank` jako `TEXT COLLATE "C"`, `category` enum `ColumnCategory` `BACKLOG`/`TODO`/`IN_PROGRESS`/`DONE`, `wipLimit`, `wipStrict`), migracja `20261111151836_columns` z ręcznym SQL (collation, ograniczenie `UNIQUE (boardId, rank)` jako `DEFERRABLE INITIALLY IMMEDIATE`) — `docs/DATABASE.md`,
   - 4 domyślne kolumny nowej tablicy (Backlog, To Do, In Progress, Done) tworzone razem z tablicą (`DEFAULT_BOARD_COLUMNS`, `rankSequenceBetween`); istniejące tablice nie są uzupełniane,
   - endpointy pod `/boards/:boardId/columns`: `GET`, `POST`, `PATCH /:columnId` (zmiana nazwy), `PATCH /:columnId/move` (`afterId`/`beforeId`), `PATCH /:columnId/settings` (kategoria, limit WIP, tryb ścisły), `DELETE /:columnId` — `docs/API.md`; ostatnia kolumna `DONE` nie może być usunięta ani przekategoryzowana (409 `LAST_DONE_COLUMN`),
@@ -42,16 +42,38 @@ M0, M1a, M1b, M2a i M2b są zmergowane do `main` (ostatnio PR #3–#7; M2b to PR
   - `packages/shared`: `schemas/column.ts` (`COLUMN_CATEGORIES`, ścisłe schematy `createColumnSchema`, `renameColumnSchema`, `moveColumnSchema`, `updateColumnSettingsSchema`, `columnSchema`, `COLUMN_ERROR_CODES`: `NEIGHBOR_NOT_FOUND`, `INVALID_POSITION`, `RANK_CONFLICT`, `LAST_DONE_COLUMN`, `BOARD_BUSY`, `DEFAULT_BOARD_COLUMNS`),
   - API: `column.repository` (blokady wiersza tablicy, `setRanks` jednym `UPDATE ... FROM unnest`), `column.service`, `column.controller`, `column.routes` (`Router({ mergeParams: true })`); brak kart (M3), brak zdarzeń Socket.io, brak frontendu,
   - testy: schematy, serwis, integracyjne `column.routes.test.ts` (m.in. porządek `ORDER BY rank` w PostgreSQL = porządek JS, równoległe przeniesienia w tę samą lukę, wstrzyknięta kolizja z ponowieniem, rebalansowanie przy wstawianiu i przeniesieniu, wyścigi o inwariant `DONE`).
-- Sprawdzone lokalnie (M2c): `lint`, `typecheck`, `test`, `format:check` — shared 368, api 342, web 77 (potwierdzone w przeglądzie kodu, 2 rundy); testy API wymagają działającej bazy.
-- Sprawdzone wcześniej (M1b): `build` web (ostrzeżenie: jeden fragment 537 kB).
+- M2d (frontend tablic i kolumn, `apps/web`; WF-BOARD-01..03 i WF-COL-01..04 ✅ także w UI; ADR-034–037), gałąź `feat/m2d-boards-frontend`, niezacommitowane:
+  - nagłówek (`AppLayout`): link z nazwą aplikacji do `/boards`, nazwa użytkownika, wylogowanie; `/` przekierowuje do `/boards`, `HOME_PATH` = `/boards`; usunięto `HomePage` i `useApiHealth` (ADR-037),
+  - `/boards`: lista tablic z rolą użytkownika, tworzenie (`createBoardSchema`), zmiana nazwy (`board:rename`), usuwanie z potwierdzeniem (`board:delete`), stany ładowania, pusty i błąd z ponowieniem,
+  - `/boards/:boardId`: kolumny poziomo (nazwa, kategoria, licznik WIP `n / limit` czerwony po przekroczeniu, liczba kart przez prop `getCardCount` — domyślnie 0 do M3), dodawanie kolumny, zmiana nazwy w miejscu (Enter/Escape, optymistycznie z wycofaniem), usuwanie z potwierdzeniem (komunikat `LAST_DONE_COLUMN`), przeciąganie `@hello-pangea/dnd` (poziome; wyłączone bez `column:write` i w trakcie zapisu przeniesienia), okno ustawień (natywny select kategorii, pusty limit WIP = `null`, `wipStrict`; wysyłane tylko zmienione pola), okno członków (dodanie po e-mailu i roli, zmiana roli, usunięcie z potwierdzeniem, opuszczenie tablicy → `/boards`; `canManageMember`/`canLeaveBoard`; własny wiersz bez kontrolek zarządzania), stan 404 i komunikat `BOARD_BUSY`,
+  - `useBoardStore` (`src/stores/board.ts`): lista tablic, otwarta tablica, kolumny, członkowie, `isMovingColumn`, `notice`; liczniki generacji odrzucają spóźnione odpowiedzi; zerowanie przy zmianie `sessionEpoch`/użytkownika,
+  - protokół przeniesienia (ADR-034, ADR-035): zmiana optymistyczna, zawsze oba `afterId`/`beforeId` (`null` na krańcach), jedno przeniesienie naraz, przy błędzie wycofanie tylko przeniesionej kolumny (`restoreOriginalPosition`), odświeżenie listy po `INVALID_POSITION`/`NEIGHBOR_NOT_FOUND`/404, wykrywanie rebalansowania po `prev.rank < moved.rank < next.rank` (ścisłe `<`, nigdy `localeCompare`) z pełnym odświeżeniem, `createColumn` dopisuje na końcu i odświeża, gdy `rank` nie pasuje,
+  - nowe komponenty UI (radix-ui, bez nowych zależności): `dialog`, `alert-dialog`, `badge`, `checkbox`, `native-select` (ADR-036); stub `ResizeObserver` w `test/setup.ts`,
+  - testy: web 77 → 172 (`columnOrder`, `columnDrag`, `columnSettings`, `boardErrorMessage`, `stores/board`, `BoardsPage`, `BoardPage` z prawdziwym przeciąganiem klawiaturą); zaktualizowano testy auth.
+- M2e (przebudowa interfejsu wg `docs/DESIGN.md`, tylko warstwa prezentacji — bez zmian logiki, API, bazy i zmiennych środowiskowych; ADR-038–042), ta sama gałąź, niezacommitowane:
+  - nowe zależności (wersje dokładne): `lucide-react` 1.72.0, `sonner` 2.0.8, `@fontsource-variable/inter` 5.3.0,
+  - `src/index.css`: wszystkie tokeny z DESIGN §6 (jasny i ciemny), `--shadow-card`/`--shadow-raised`, mapowanie na tokeny shadcn, narzędzia Tailwind (`bg-canvas`, `bg-surface`, `bg-column`, `bg-sidebar`, `text-subtle`, `bg-primary-subtle`, `bg-danger-subtle`, `shadow-card`, `shadow-raised`), zaokrąglenia 4/6/8 px, Inter z fallbackiem `system-ui`, bazowo 14 px,
+  - motyw jasny/ciemny/systemowy: `src/lib/theme.ts`, `src/stores/theme.ts` (Zustand), klucz `localStorage` `streamline-theme`, skrypt w `index.html` ustawia klasę `dark` przed startem Reacta (brak migotania), tryb systemowy śledzi `prefers-color-scheme`; test sprawdza zgodność skryptu z `theme.ts` (ADR-038),
+  - `AppHeader` (własne logo SVG, pomoc → `ShortcutsDialog` ze skrótami jeszcze niepodpiętymi oznaczonymi „Soon”, `ThemeSwitcher`, menu awatara: nazwa, e-mail, „Log out”); `AppLayout` jest tylko powłoką; `Breadcrumbs`, `AppToaster` (sonner, prawy dolny róg),
+  - `Avatar`/`AvatarStack` (paleta 8 barw wybierana FNV-1a z id, nakładanie −8 px, maks. 4 + „+N”), `BoardIcon`, `src/lib/avatar.ts`, hook `useMediaQuery` (progi 1024 i 768 px),
+  - `BoardSidebar`: 240 px, zwijany do 0 (zapis w `streamline-sidebar-collapsed`, domyślnie zwinięty poniżej 1024 px), poniżej 768 px szuflada (Radix Dialog; zamyka się przy powiększeniu okna); pozycje: Board, Analytics (Soon), Members (otwiera `MembersDialog`), Settings (tylko z `board:rename`, Soon),
+  - `/boards`: okruszki, H1 „Your boards”, „Create board” otwiera okno (ten sam formularz), siatka kart `minmax(260px)`, plakietka roli, menu ⋯ (Rename/Delete), stan pusty, szkielety ładowania,
+  - `/boards/:boardId`: okruszki, H1 „Board”, pasek narzędzi (pole filtra i przełącznik awatarów członków — tylko lokalny stan, filtrowanie dopiero w M3; „Sort” wyłączony), podpowiedź Shift+N, szkielety kolumn,
+  - `BoardColumn` wg DESIGN §2: 280 px, nazwa wielkimi literami + licznik `(n)` / `(n / limit)`, przekroczony WIP = licznik w kolorze błędu, górna krawędź i tło `danger-subtle`; kropka kategorii; wyłączony „+” (M3); menu ⋯ (Rename/Settings/Delete); pusty stan `CircleSlash` „No cards”; przerywane „Add column”; uchwyt przeciągania to osobny `GripVertical` (ADR-040),
+  - strony logowania i rejestracji wg DESIGN §5 (`AuthCard`, `AuthField` 40 px),
+  - komunikaty: `notice` ze store i nieudana optymistyczna zmiana nazwy jako toasty sonner ze stałym id (ADR-039); błędy walidacji formularzy pozostają w treści formularza; menu rozwijane są niemodalne, a okna otwarte z menu zwracają fokus na przycisk ⋯ (`returnFocusRef`; ADR-041),
+  - zaakceptowane odstępstwa od DESIGN: tekst w kolorze błędu używa `--destructive` (`#AE2E24` jasny / `#F87168` ciemny), bo `--danger` `#E34935` nie spełnia AA na bieli (ADR-042); brak opisu tablicy w panelu bocznym (brak pola w modelu); brak awatarów członków na kartach tablic (API nie zwraca danych); kropka TODO w `--primary`, BACKLOG w `--text-subtle`; w ciemnym motywie przyciski primary/destructive mają ciemny tekst,
+  - testy: web 172 → 219 (motyw, awatary, `BoardColumn`, `BoardSidebar`, menu `AppHeader`, powrót fokusu, pojedynczy toast w StrictMode, stany puste, szkielety).
+- Sprawdzone lokalnie (M2d + M2e): `lint`, `typecheck`, `format:check`, `build` oraz `test` — shared 368, api 342, web 219; testy API wymagają działającej bazy.
+- `build` web: ostrzeżenie o fragmencie 827 kB (537 kB po M1b, 711 kB po M2d).
 
 ## W toku
-- M2c oczekuje na commit i PR (commit tylko na wyraźną prośbę).
+- M2d i M2e oczekują na commit i PR (commit tylko na wyraźną prośbę).
 
 ## Kolejne kroki
 Zakres i priorytety: `docs/REQUIREMENTS.md`; plan: `docs/WORKFLOW.md`, sekcja 7.
-1. **Zatwierdzenie M2c**: commit i PR.
-2. **M2d** — frontend tablic i kolumn (użyć `hasBoardPermission` z `shared` do ukrywania kontrolek). Uwagi z M2c: po `409 INVALID_POSITION` (nieaktualny widok) odświeżyć listę kolumn; po rebalansowaniu odpowiedź zawiera tylko jedną kolumnę, więc klient odświeża całą listę (do czasu decyzji o zbiorczym zdarzeniu socket); `rank` jest w odpowiedzi — porównywać przez `<`, nie `localeCompare`.
+1. **Zatwierdzenie M2d + M2e**: commit i PR. Sprawdzono ręcznie w przeglądarce (2026-11-12): logowanie, lista tablic, strona tablicy (1280/1440 px i 653 px), motyw jasny/ciemny (zachowany po przeładowaniu), menu kolumny i ustawienia WIP (licznik „(0 / 3)”, powrót fokusu), przeciąganie kolumny myszą (kolejność zachowana po przeładowaniu), szuflada i okno członków, menu konta, okno skrótów, zwijanie panelu (stan zachowany). Poprawiono przy tym: poziome przewijanie całej strony na wąskim ekranie (ukryte etykiety `sr-only` wychodziły poza kontener przewijania — dodano `relative`) oraz przycisk rozwijania zwiniętego panelu wystający poza lewą krawędź (zarezerwowany pasek 28 px).
+2. **M3** — karty (karty w kolumnach, `getCardCount` w `BoardColumn` zastąpić prawdziwą liczbą; egzekwowanie trybu ścisłego WIP przy przenoszeniu kart).
 3. Od M3 każde przeniesienie karty zapisuje `CardTransition` (ADR-020) — warunek analityki przepływu (M6).
 4. WF-BOARD-04 (przekazanie własności): akcja `board:transfer` jest w macierzy uprawnień, ale endpointu jeszcze nie ma — do zrobienia przed możliwością opuszczenia tablicy przez właściciela.
 
@@ -66,7 +88,7 @@ Zakres i priorytety: `docs/REQUIREMENTS.md`; plan: `docs/WORKFLOW.md`, sekcja 7.
 4. W `apps/api/.env` ustawić `JWT_ACCESS_SECRET` (wymagany, min. 32 znaki; API nie wystartuje bez niego). Przykład: `node -e "console.log(require('node:crypto').randomBytes(48).toString('base64url'))"`.
 5. `pnpm db:up` (PostgreSQL w Dockerze).
 6. `pnpm --filter @streamline/api db:migrate` — stosuje migracje (istnieją migracje `20261111010926_auth_users_refresh_tokens`, `20261111143833_boards_members` i `20261111151836_columns`).
-7. `pnpm dev` — API na `:4000`, web na `:5173` (proxy `/api` do API).
+7. `pnpm dev` — API na `:4000`, web na `:5173` (proxy `/api` do API); po zalogowaniu aplikacja otwiera `/boards`.
 
 Kontrole: `pnpm lint && pnpm typecheck && pnpm test`, `pnpm format:check`, `pnpm build`. Testy API wymagają działającej bazy (`pnpm db:up`); baza `streamline_test` jest tworzona i migrowana automatycznie.
 
@@ -76,7 +98,13 @@ Zmienne środowiskowe uwierzytelniania (`apps/api/.env.example`): `JWT_ACCESS_SE
 - Frontend: odświeżenie może rozpocząć się w trakcie `POST /auth/logout` (równoległe 401 w ciągu ok. 50 ms) i zrotować ciasteczko, zanim wylogowanie je unieważni; możliwe wzmocnienie: flaga „wylogowywanie” powodująca odrzucenie `refreshSession`.
 - Frontend: `login`/`register` nie zwiększają `sessionEpoch` — odświeżenie w toku podczas logowania mogłoby nadpisać lub wyczyścić nową sesję (w obecnym UI nieosiągalne).
 - Kody błędów (np. `REFRESH_TOKEN_ROTATED`) są zduplikowane w `apps/api` i `apps/web` — przenieść do `packages/shared`.
-- Brak podziału kodu (jeden fragment 537 kB) — leniwe ładowanie tras w późniejszym etapie.
+- Brak podziału kodu (jeden fragment 827 kB po M2e) — `lazy()` dla tras, w pierwszej kolejności `BoardPage` (uwaga z przeglądu M2d, nierealizowana).
+- M2d: zmiany ról wprowadzone przez innych użytkowników są widoczne dopiero po przeładowaniu (do czasu Socket.io); wykrywanie rebalansowania w kliencie jest „best-effort” (ADR-035).
+- M2d: mapowanie komunikatów błędów dla auth (`authErrorMessage.ts`) i tablic (`boardErrorMessage.ts`) można ujednolicić we wspólnym helperze.
+- M2d/M2e: w przeglądarce nie sprawdzono wizualnie toastów, stanu przekroczonego limitu WIP (brak kart do M3) ani braku migotania motywu (sprawdzono tylko, że klasa `dark` jest ustawiona po przeładowaniu); obie poprawki z przeglądu w przeglądarce nie mają testów (układ nie jest mierzalny w jsdom).
+- M2e: `components/ui/card.tsx` prawdopodobnie nieużywany — usunąć, jeśli M3 go nie potrzebuje.
+- M2e: `aria-label` na liczniku kolumny jest zbędny (testy wyszukują po nim) — uprościć przy okazji.
+- M2e: pole filtra, przełącznik awatarów i „Sort” na stronie tablicy nic nie filtrują do M3; pozycje „Analytics”, „Settings” i skróty z „Soon” są nieaktywne.
 - Podwójna nawigacja po zalogowaniu/wylogowaniu (nieszkodliwa).
 - Nazwy `WS_EVENTS` są robocze — do zatwierdzenia z funkcjonalnościami.
 - `error-handler` mapuje wszystkie błędy 4xx parsera ciała na `BAD_REQUEST`; brak zabezpieczenia `headersSent`.

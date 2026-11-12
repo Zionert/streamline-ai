@@ -101,3 +101,15 @@ Vitest: `packages/shared` — 28 testów, `apps/api` — 77, `apps/web` — 5 (�
   - rebalansowanie przy wstawianiu i przy przeniesieniu (kolejność zachowana),
   - wyścigi o inwariant „co najmniej jedna kolumna `DONE`” (równoległe usunięcia i zmiany kategorii).
 - Ograniczenia: brak testu obciążeniowego; ponowienia ograniczone do 5 prób, więc przy bardzo dużej rywalizacji możliwe jest 409 `RANK_CONFLICT` (nie mierzono częstości). Limity czasu transakcji są jawne (`lock_timeout` 2 s, `maxWait` 2 s, `timeout` 5 s); przekroczenie daje 503 `BOARD_BUSY` bez ponowień (ADR-033). Uwagi z drugiej rundy przeglądu odnotowane w stanie projektu.
+
+## 5.x Testy frontendu tablic i kolumn (M2d)
+- Liczba testów: web 77 → 172 (shared 368, api 342, bez zmian).
+- Testy jednostkowe czystej logiki: `columnOrder` (porównywanie kluczy bez `localeCompare`, wyznaczanie sąsiadów, częściowe wycofanie, sprawdzanie dopasowania `rank`), `columnDrag`, `columnSettings`, `boardErrorMessage`.
+- Testy magazynu `stores/board.test.ts`: odrzucanie spóźnionych odpowiedzi (liczniki generacji, także `renameBoard`), zerowanie przy zmianie sesji, optymistyczne przeniesienie z wycofaniem zachowującym współbieżne zmiany, jedno przeniesienie naraz, odświeżenie po `INVALID_POSITION`/`NEIGHBOR_NOT_FOUND`/404 i po wykryciu rebalansowania.
+- Testy komponentów (RTL, ręczny adapter axios): `BoardsPage` (stany ładowania, pusty, błąd z ponowieniem, tworzenie, zmiana nazwy, usuwanie) i `BoardPage`, w tym rzeczywiste przeciąganie kolumny klawiaturą przez `@hello-pangea/dnd`, okno ustawień, okno członków, stan 404 i komunikat `BOARD_BUSY`. W `test/setup.ts` dodano stub `ResizeObserver` (jsdom). Natywny `<select>` ułatwił testy (ADR-036).
+- Ograniczenia: brak testów end-to-end (Playwright) i ręcznej weryfikacji w przeglądarce (układ, przewijanie poziome, przeciąganie myszą); nie mierzono wydajności interfejsu.
+
+## 5.x Testy przebudowy interfejsu (M2e)
+- Liczba testów frontendu wzrosła z 172 do 219 (shared 368, api 342 bez zmian). Nowe przypadki: motyw (`theme.test.ts`, w tym zgodność skryptu w `index.html` z modułem), awatary (`avatar.test.ts`), `BoardColumn` (liczniki, przekroczenie WIP, stan pusty), `BoardSidebar` (zwijanie, szuflada), menu `AppHeader`, powrót fokusu do przycisku ⋯, pojedynczy toast w StrictMode, stany puste i szkielety ładowania.
+- Kontrole `lint`, `typecheck`, `test`, `build` i `format:check` przechodzą.
+- Luka: nie wykonano ręcznej weryfikacji w przeglądarce (układ, motyw ciemny, brak migotania, przeciąganie myszą, toasty); testy jsdom nie obejmują renderowania CSS.

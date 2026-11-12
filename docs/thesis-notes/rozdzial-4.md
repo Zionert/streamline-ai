@@ -79,3 +79,29 @@ WHERE c."id" = v."id" AND c."boardId" = $3
 - **Mapowanie błędów.** `error-handler` tłumaczy `RankError`: `INVALID_RANK` i `INVALID_ARGUMENT` → 400, `INVALID_RANK_ORDER` → 409.
 - **Domyślne kolumny.** `POST /boards` tworzy tablicę, członkostwo właściciela i cztery kolumny w jednym zagnieżdżonym `create` (jedna transakcja); klucze z `rankSequenceBetween(null, null, 4)`.
 - Szczegóły i kody błędów: `docs/API.md`; decyzje: ADR-028–032.
+
+## 4.x Frontend tablic i kolumn (M2d)
+- **Struktura.** `apps/web/src/features/boards/` (strony, okna dialogowe, klienty HTTP) i `apps/web/src/stores/board.ts`. Logika niezależna od Reacta jest w czystych funkcjach: `columnOrder.ts` (`reorderList`, `getMoveNeighbors`, `restoreOriginalPosition`, `rankFitsAt`), `columnDrag.ts` (przekształcenie `DropResult` w przeniesienie), `columnSettings.ts` (wyznaczenie zmienionych pól).
+- **Porównywanie kluczy.** `compareRanks` używa operatorów `<`/`>` na łańcuchach, a nie `localeCompare`, aby kolejność zgadzała się z `COLLATE "C"` w PostgreSQL (por. 5.3, dowód różnicy względem `localeCompare`):
+
+  ```ts
+  // columnOrder.ts (idea)
+  const fits = prev.rank < moved.rank && moved.rank < next.rank;
+  if (!fits) await reloadColumns(); // rebalansowanie zmieniło inne klucze
+  ```
+- **Optymistyczny interfejs z wycofaniem.** `moveColumn` zmienia kolejność lokalnie, wysyła `PATCH .../move` z `afterId` i `beforeId` (`null` na krańcach), a przy błędzie przywraca wyłącznie przeniesioną kolumnę w aktualnej liście (`restoreOriginalPosition`), zachowując współbieżne zmiany (np. nazwy). Błędy `INVALID_POSITION`, `NEIGHBOR_NOT_FOUND` i 404 wywołują pełne odświeżenie. Podobnie zmiana nazwy kolumny jest zapisywana optymistycznie z wycofaniem.
+- **Przeciąganie.** `@hello-pangea/dnd`, jeden poziomy `Droppable`; przeciąganie jest wyłączone bez `column:write` oraz w trakcie zapisu poprzedniego przeniesienia (`isMovingColumn`).
+- **Ustawienia kolumny.** Formularz wysyła tylko zmienione pola; pusty limit WIP oznacza `null`.
+- **Komponenty UI.** Dodano `dialog`, `alert-dialog`, `badge`, `checkbox`, `native-select` na bazie `radix-ui` (bez nowych zależności).
+- **Zmiana strony startowej.** Usunięto stronę stanu API; `/` przekierowuje do `/boards`.
+- Rozmiar paczki po M2d: 711 kB (wcześniej 537 kB); podział kodu (`lazy()`) odłożony.
+- Decyzje: ADR-034–037.
+
+## 4.x Przebudowa interfejsu (M2e)
+- Zmiana dotyczyła wyłącznie warstwy prezentacji `apps/web`; logika, API i baza nie zostały zmienione. Dodano zależności `lucide-react` 1.72.0, `sonner` 2.0.8 i `@fontsource-variable/inter` 5.3.0.
+- Motyw: `src/lib/theme.ts`, `src/stores/theme.ts` (Zustand), klucz `streamline-theme`; tryb systemowy nasłuchuje `prefers-color-scheme`. Skrypt w `index.html` powtarza regułę przed startem Reacta, a test weryfikuje ich zgodność.
+- Awatary: kolor wybierany deterministycznie funkcją skrótu FNV-1a z identyfikatora użytkownika spośród 8 barw (`src/lib/avatar.ts`), stos z nakładaniem −8 px i limitem 4 awatarów plus „+N”.
+- Responsywność: hook `useMediaQuery` (progi 1024 i 768 px); `BoardSidebar` zwija się (stan w `streamline-sidebar-collapsed`) lub jest szufladą opartą na Radix Dialog.
+- `BoardColumn`: licznik `(n)`/`(n / limit)`, wizualizacja przekroczenia limitu WIP, kropka kategorii, stan pusty, osobny uchwyt `GripVertical`.
+- Toasty (sonner) ze stałym `id`; `notice` czyszczone akcją `dismissNotice`.
+- Znane ograniczenie: fragment po budowaniu 827 kB (711 kB po M2d) — planowane `lazy()` dla tras.

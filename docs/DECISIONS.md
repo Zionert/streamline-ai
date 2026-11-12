@@ -198,3 +198,57 @@
 - **Decyzja:** transakcje zapisu kolumn mają jawne limity (`ColumnTransactionOptions`, wstrzykiwane do `createColumnRepository(db, options)`, bez zmiennych środowiskowych): `lock_timeout` 2000 ms (ustawiany w transakcji przez `SELECT set_config('lock_timeout', $1, true)`, więc lokalnie dla transakcji), `maxWait` 2000 ms, `timeout` 5000 ms. Kod PostgreSQL 55P03 (`lock_not_available`) lub błąd Prisma P2028 jest tłumaczony na `BoardBusyError` (repozytorium), następnie na `ServiceUnavailableError` (serwis) i odpowiedź HTTP 503 z kodem `BOARD_BUSY` (`COLUMN_ERROR_CODES`). Serwer nie ponawia takiej próby. Dotyczy tworzenia, przeniesienia, zmiany ustawień i usunięcia; zmiana nazwy działa poza transakcją. Dodatkowo tylko P2002 na ograniczeniu `Column_boardId_rank_key` jest traktowany jako kolizja klucza (`isUniqueViolationOf` w `repositories/prisma-errors.ts` czyta `meta.target` albo `driverAdapterError.cause.constraint`, bo adapter pg w Prisma 7.10.1 nie ustawia `meta.target`).
 - **Alternatywy:** domyślne opcje Prisma (500 przy kolejce, brak limitu oczekiwania na blokadę w bazie); ponowienia po stronie serwera (patrz niżej); zmienne środowiskowe dla limitów (więcej konfiguracji bez potrzeby); 409 zamiast 503.
 - **Konsekwencje:** przeciążenie jest sygnalizowane klientowi szybko i czytelnie. Powody odrzucenia ponowień: to chwilowa rywalizacja o zasób, a nie konflikt stanu (w przeciwieństwie do `RANK_CONFLICT`, ADR-031), a ponawianie po stronie serwera wydłużałoby kolejkę i czas odpowiedzi (fail fast). Ograniczenia: P2028 obejmuje też wolną bazę i oczekiwanie na połączenie z puli, nie tylko blokady (wszystko mapuje się na `BOARD_BUSY`); `AppError` nie przenosi nagłówków, więc brak `Retry-After`.
+
+## ADR-034: Przeniesienie kolumny w kliencie — optymistyczna zmiana, jedno żądanie naraz, częściowe wycofanie
+- **Kontekst:** przeciąganie kolumn (M2d) musi dawać natychmiastową reakcję, a serwer przypisuje `rank` (ADR-031) i może go zmienić u innych kolumn przy rebalansowaniu (ADR-030). Odpowiedź REST zawiera tylko jedną kolumnę (ADR-032).
+- **Decyzja:** `useBoardStore.moveColumn` (`apps/web/src/stores/board.ts`) najpierw zmienia kolejność lokalnie (`reorderList`), po czym wysyła `PATCH .../move`. Naraz trwa co najwyżej jedno przeniesienie (`isMovingColumn`; przeciąganie jest wyłączone w trakcie zapisu). Klient zawsze wysyła oba sąsiedztwa `afterId` i `beforeId` (`null` na krańcach listy; `getMoveNeighbors`). Przy błędzie wycofywana jest tylko przeniesiona kolumna na jej pierwotne miejsce w aktualnej liście (`restoreOriginalPosition`), dzięki czemu zachowane są zmiany wprowadzone w międzyczasie (np. zmiana nazwy). Po `INVALID_POSITION`, `NEIGHBOR_NOT_FOUND` i 404 lista kolumn jest pobierana ponownie.
+- **Alternatywy:** wysyłanie tylko jednego sąsiada (serwer dostaje mniej informacji o intencji); kolejka wielu przeniesień (złożone, każde kolejne zależy od wyniku poprzedniego); wycofanie całej listy do migawki sprzed przeniesienia (gubi współbieżne zmiany); brak optymizmu (zauważalne opóźnienie).
+- **Konsekwencje:** interfejs reaguje od razu, a stan po błędzie jest spójny. Cena: przeciąganie jest zablokowane na czas zapisu, a w razie rozjazdu z serwerem następuje pełne odświeżenie listy.
+
+## ADR-035: Wykrywanie rebalansowania po stronie klienta przez porównanie `rank`
+- **Kontekst:** po rebalansowaniu serwer zmienia `rank` także sąsiednich kolumn, ale odpowiedź zawiera jedną kolumnę (ADR-032). Zbiorcze zdarzenie socket nie jest jeszcze zaprojektowane.
+- **Decyzja:** po udanym przeniesieniu klient sprawdza, czy zwrócony `rank` mieści się między sąsiadami z lokalnej listy (`prev.rank < moved.rank < next.rank`; `rankFitsAt`/`rankFitsBetween` w `columnOrder.ts`); jeśli nie, pobiera całą listę. To samo dotyczy `createColumn` (dopisanie na końcu; gdy `rank` nie jest większy od ostatniego — odświeżenie). Porównanie to ścisłe `<` na łańcuchach, nigdy `localeCompare` (kolejność ma być zgodna z `COLLATE "C"`, patrz M2a).
+- **Alternatywy:** zawsze odświeżać listę po przeniesieniu (dodatkowe żądanie przy każdej operacji); zmiana kontraktu API tak, by zwracał wszystkie zmienione kolumny (poza zakresem M2d); czekanie na zdarzenie socket.
+- **Konsekwencje:** zwykłe przeniesienie kosztuje jedno żądanie. Wykrywanie jest „best-effort”: gdy po rebalansowaniu przeniesiona kolumna nadal mieści się między lokalnymi sąsiadami, a inne kolumny mają nowe klucze, klient zobaczy to dopiero po następnym odświeżeniu. Wyświetlana kolejność pozostaje poprawna, bo rebalansowanie ją zachowuje.
+
+## ADR-036: Natywny `<select>` zamiast Radix Select
+- **Kontekst:** okno ustawień kolumny wymaga wyboru kategorii spośród czterech wartości. Pozostałe komponenty shadcn/ui opierają się na Radix.
+- **Decyzja:** komponent `native-select` (`apps/web/src/components/ui/native-select.tsx`) opakowuje natywny `<select>` w stylu shadcn.
+- **Alternatywy:** Radix Select (własny listbox i portal, trudniejsze testy w jsdom).
+- **Konsekwencje:** pełna dostępność i obsługa klawiatury, proste testy w jsdom; wygląd rozwijanej listy zależy od przeglądarki. Przy większej liczbie opcji lub wyszukiwaniu można wrócić do Radix Select.
+
+## ADR-037: `/` przekierowuje do `/boards`; lista tablic jest stroną startową
+- **Kontekst:** strona `/` pokazywała tylko stan API (`HomePage`, `useApiHealth`), co po M2d traci sens.
+- **Decyzja:** `HOME_PATH` w `features/auth/redirect.ts` wynosi `/boards`; trasa `/` przekierowuje do `/boards`, a `HomePage` i `useApiHealth` usunięto. Nagłówek (`AppLayout`) zawiera link z nazwą aplikacji do `/boards`.
+- **Alternatywy:** zostawić `HomePage` jako stronę powitalną (zbędny ekran przed listą tablic).
+- **Konsekwencje:** po zalogowaniu użytkownik trafia od razu do swoich tablic; zaktualizowano testy auth. `GET /health` pozostaje w API (bez klienta w web).
+
+## ADR-038: Mechanizm motywu — klucz `localStorage`, skrypt przed Reactem, store Zustand, tryb systemowy
+- **Kontekst:** DESIGN §8 wymaga motywu jasnego, ciemnego i systemowego bez migotania przy ładowaniu strony.
+- **Decyzja:** wybór (`light`/`dark`/`system`) jest zapisywany w `localStorage` pod kluczem `streamline-theme`. Mały skrypt w `apps/web/index.html` ustawia klasę `dark` na `<html>` przed startem Reacta. Logikę utrzymuje `src/lib/theme.ts`, a stan `src/stores/theme.ts` (Zustand); tryb `system` śledzi `prefers-color-scheme`. Test sprawdza, że skrypt w `index.html` jest zgodny z `theme.ts`.
+- **Alternatywy:** ustawianie klasy dopiero w efekcie Reacta (widoczne mignięcie jasnego motywu); ciasteczko (zbędne, wybór dotyczy tylko klienta); biblioteka do motywów (dodatkowa zależność dla kilkunastu linii).
+- **Konsekwencje:** brak migotania; reguła jest zdublowana w skrypcie i w module, co pilnuje test. Skrypt wbudowany w HTML utrudniłby w przyszłości ścisłą politykę CSP bez `nonce`/hasha.
+
+## ADR-039: Komunikaty (`notice`, nieudana zmiana nazwy) jako toasty sonner ze stałym identyfikatorem
+- **Kontekst:** po przebudowie komunikaty o błędach operacji (np. `BOARD_BUSY`, wycofana zmiana nazwy) nie mają stałego miejsca w układzie.
+- **Decyzja:** `notice` ze store tablic i nieudana optymistyczna zmiana nazwy są wyświetlane jako toasty biblioteki sonner (`AppToaster`, prawy dolny róg) ze stałym `id`, a `notice` jest czyszczone istniejącą akcją `dismissNotice`. Błędy walidacji formularzy pozostają w treści formularza.
+- **Alternatywy:** pasek komunikatu w układzie strony (przesuwa treść); osobny toast na każde zdarzenie (duplikaty, m.in. przy podwójnym wywołaniu efektów w StrictMode).
+- **Konsekwencje:** powtórzony komunikat zastępuje poprzedni zamiast się mnożyć, a w StrictMode pojawia się jeden toast (test). Nowa zależność `sonner` 2.0.8.
+
+## ADR-040: Dedykowany uchwyt przeciągania kolumny zamiast przeciągania za nagłówek
+- **Kontekst:** DESIGN §2 zakładał przeciąganie za nagłówek. `@hello-pangea/dnd` nadaje elementowi uchwytu `role=button`, co ukrywa dla czytników ekranu jego zawartość (nazwę kolumny i licznik).
+- **Decyzja:** uchwytem jest osobna ikona `GripVertical`; nagłówek zachowuje semantykę nagłówka. DESIGN §2 zaktualizowano.
+- **Alternatywy:** uchwyt na całym nagłówku (utrata dostępności nazwy i licznika); własna obsługa przeciągania (poza zakresem).
+- **Konsekwencje:** nazwa i licznik pozostają dostępne; obszar chwytu jest mniejszy niż cały nagłówek. Przeciąganie klawiaturą działa tak jak wcześniej.
+
+## ADR-041: Menu niemodalne i powrót fokusu do przycisku ⋯
+- **Kontekst:** okna dialogowe otwierane z menu rozwijanego tracą fokus po zamknięciu menu.
+- **Decyzja:** menu rozwijane (Radix) są niemodalne, a okna otwarte z menu zwracają fokus na przycisk ⋯ przez `returnFocusRef`.
+- **Alternatywy:** menu modalne (blokuje resztę strony i komplikuje współpracę z oknami); pozostawienie domyślnego zachowania (fokus ginie na `body`).
+- **Konsekwencje:** zachowana nawigacja klawiaturą; dodatkowa referencja w komponentach z menu (pokryta testami).
+
+## ADR-042: Rozdzielenie `--danger` (wypełnienia) i `--destructive` (tekst) ze względu na kontrast AA
+- **Kontekst:** `--danger` `#E34935` z DESIGN §6 ma na bieli kontrast poniżej 4,5:1 (WNF-05).
+- **Decyzja:** `--danger` służy do wypełnień i obramowań, a czerwony tekst używa `--destructive`: `#AE2E24` (jasny) / `#F87168` (ciemny). W ciemnym motywie przyciski primary i destructive mają ciemny tekst.
+- **Alternatywy:** ściemnić `--danger` (zmienia wypełnienia i odbiega od palety); zostawić kontrast poniżej AA.
+- **Konsekwencje:** zgodność z AA dla tekstu; dwa odcienie czerwieni w systemie wizualnym (opisane w DESIGN §6).

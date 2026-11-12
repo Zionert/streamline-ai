@@ -1,6 +1,6 @@
 # Architektura
 
-Stan: M2b — szkielet, uwierzytelnianie oraz tablice, członkowie i role. Uzasadnienia decyzji: `docs/DECISIONS.md`.
+Stan: M2d — szkielet, uwierzytelnianie, tablice, członkowie, role, kolumny oraz frontend tablic i kolumn. Uzasadnienia decyzji: `docs/DECISIONS.md`.
 
 ## Moduły
 
@@ -24,15 +24,18 @@ Moduł `src/rank/` (M2a, ADR-022–024): `keys.ts` (alfabet, `isValidRank`, `Ran
 
 ### apps/web
 Tailwind 4 (`@tailwindcss/vite`), shadcn/ui (new-york, neutral; `input`, `label`, `card` pisane ręcznie w tym samym stylu). Serwer deweloperski Vite przekazuje `/api` do API.
-- `routes.tsx` — drzewo tras: `AuthBootstrap` (układ główny) → `GuestRoute` (`/login`, `/register`) oraz `ProtectedRoute` → `AppLayout` → `/` (`HomePage`).
+- `routes.tsx` — drzewo tras: `AuthBootstrap` (układ główny) → `GuestRoute` (`/login`, `/register`) oraz `ProtectedRoute` → `AppLayout` → `/` (przekierowanie do `/boards`), `/boards` (`BoardsPage`), `/boards/:boardId` (`BoardPage`).
 - `stores/auth.ts` — Zustand: `user`, `accessToken` (tylko pamięć), `status` (`idle` | `loading` | `authenticated` | `unauthenticated`), `sessionEpoch` (zwiększany przy `clearSession`).
 - `lib/api.ts` — `createApiClient({ rotatedRetryDelayMs, sleep, adapter })` zwraca `{ api, refreshSession, waitForPendingRefresh }`; `lib/api-error.ts` — `getApiErrorInfo` (schemat `errorResponseSchema`).
 - `features/auth/` — `authApi.ts` (login, register, logout), `session.ts` (`restoreSession`), `useSessionRestore.ts`, `AuthBootstrap`, `ProtectedRoute`, `GuestRoute`, `LoginPage`, `RegisterPage`, `AuthCard`, `AuthField`, `authErrorMessage.ts`, `redirect.ts` (`getRedirectTarget` przyjmuje tylko ścieżki wewnątrz aplikacji, odrzuca `//` i `/\`).
-- `components/layout/` — `AppLayout` (nagłówek z nazwą, e-mailem i przyciskiem „Log out”), `FullPageLoader`.
+- `stores/board.ts` (M2d, ADR-034, ADR-035) — `useBoardStore` (Zustand): lista tablic, otwarta tablica (`board`, `columns`, `members`), `isMovingColumn`, `notice`. Liczniki generacji odrzucają spóźnione odpowiedzi (także `renameBoard`); stan jest zerowany przy zmianie `sessionEpoch` lub użytkownika w `authSlice`. Akcje: ładowanie, tworzenie, zmiana nazwy i usuwanie tablic; kolumny (tworzenie, nazwa z optymistycznym zapisem i wycofaniem, ustawienia — wysyłane tylko zmienione pola, usuwanie, `moveColumn`); członkowie (dodanie, zmiana roli, usunięcie, opuszczenie).
+- `features/boards/` (M2d): `BoardsPage` (lista, tworzenie, zmiana nazwy, usuwanie), `BoardPage` (tablica, stan 404, komunikat `BOARD_BUSY`), `BoardColumns` (poziomy `DragDropContext`/`Droppable`), `BoardColumn` (nazwa, kategoria i licznik WIP `n / limit` z `badges.tsx`, czerwony po przekroczeniu; liczba kart z propa `getCardCount`, domyślnie 0 do czasu M3), `ColumnTitleEditor` (Enter/Escape), `AddColumnForm`, `ColumnSettingsDialog`, `MembersDialog`, `ConfirmDialog`; logika czysta: `columnOrder.ts` (`compareRanks`, `sortByRank`, `reorderList`, `getMoveNeighbors`, `restoreOriginalPosition`, `rankFitsAt`), `columnDrag.ts` (`getColumnMove`), `columnSettings.ts`, `boardErrorMessage.ts`; klienty HTTP `boardsApi.ts`, `columnsApi.ts`; `labels.ts`, `paths.ts`. Kontrolki są ukrywane przez `hasBoardPermission`, `canManageMember` i `canLeaveBoard` z `shared`.
+- `components/ui/` — dodane: `dialog`, `alert-dialog`, `badge`, `checkbox`, `native-select` (ADR-036); `test/setup.ts` zawiera stub `ResizeObserver`.
+- `components/layout/` — `AppLayout` (nagłówek: link z nazwą aplikacji do `/boards`, nazwa użytkownika, przycisk wylogowania), `FullPageLoader`.
 - `test/` — `mockAdapter.ts` (ręczny adapter axios), `renderApp.tsx`, `fixtures.ts`.
 
 ## Przepływy danych
-Przepływ M0: `HomePage` → `useApiHealth` → `GET /api/health` (proxy Vite) → `health.routes` → `health.controller` → `health.service` → `{ "status": "ok" }`.
+Przepływ M0: `GET /api/health` (proxy Vite) → `health.routes` → `health.controller` → `health.service` → `{ "status": "ok" }` (od M2d frontend nie wywołuje już tego endpointu).
 
 Przepływ odświeżania sesji (M1a):
 
@@ -148,6 +151,33 @@ sequenceDiagram
 Rebalansowanie nigdy nie podnosi trzymanej blokady (restart próby zamiast „upgrade”), więc nie powstaje zakleszczenie. Usunięcie i zmiana ustawień biorą blokadę wyłączną, co czyni inwariant „co najmniej jedna kolumna `DONE`” odpornym na wyścigi. Tworzenie tablicy wstawia 4 domyślne kolumny w tej samej transakcji (`board.repository`: zagnieżdżony `create`). Przekroczenie limitu czasu (PostgreSQL 55P03 lub Prisma P2028) repozytorium zgłasza jako `BoardBusyError`, serwis jako `ServiceUnavailableError`, a klient dostaje 503 `BOARD_BUSY`. Zdarzenia Socket.io dla kolumn nie są jeszcze emitowane; po rebalansowaniu zmieniają się klucze wielu kolumn, a odpowiedź REST zawiera jedną.
 
 Docelowy przepływ (ADR-003): UI → REST → baza → zdarzenie Socket.io do pokoju `board:<id>` → pozostali klienci.
+
+### Przeniesienie kolumny w kliencie (M2d, ADR-034, ADR-035)
+
+```mermaid
+sequenceDiagram
+  participant UI as BoardColumns (dnd)
+  participant S as useBoardStore
+  participant API as REST (columns)
+  UI->>S: moveColumn (gdy nie trwa inne przeniesienie)
+  S->>S: reorderList (zmiana optymistyczna), isMovingColumn = true
+  S->>API: PATCH .../move z afterId i beforeId (null na krańcach)
+  alt sukces
+    API-->>S: kolumna z nowym rank
+    S->>S: czy prev.rank < rank < next.rank?
+    opt nie (rebalansowanie)
+      S->>API: GET .../columns (pełne odświeżenie)
+    end
+  else błąd
+    S->>S: restoreOriginalPosition (tylko przeniesiona kolumna)
+    opt INVALID_POSITION, NEIGHBOR_NOT_FOUND, 404
+      S->>API: GET .../columns
+    end
+  end
+  S->>S: isMovingColumn = false
+```
+
+Zdarzeń Socket.io jeszcze nie ma: zmiany innych użytkowników (w tym ról) są widoczne po ponownym załadowaniu widoku.
 
 ## Narzędzia i CI
 ESLint (jedna konfiguracja), Prettier, Husky + lint-staged, Vitest. GitHub Actions (`.github/workflows/ci.yml`): push/PR do `main` — instalacja z zamrożonym lockfile, `prisma generate`, lint, typecheck, test, format:check, build; usługa PostgreSQL.

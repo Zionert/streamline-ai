@@ -3,6 +3,29 @@
 Format: [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/).
 
 ## [Unreleased]
+### Dodano (M2e)
+- Przebudowa interfejsu `apps/web` wg systemu wizualnego: tokeny kolorów (jasny i ciemny), font Inter, ikony lucide, nowy nagłówek z menu użytkownika, pomocą ze skrótami i przełącznikiem motywu, panel boczny tablicy (zwijany, szuflada poniżej 768 px), okruszki.
+- Motyw jasny/ciemny/systemowy z zapisem w `localStorage` i bez migotania przy ładowaniu.
+- Awatary (`Avatar`, `AvatarStack`), szkielety ładowania, stany puste, toasty (sonner).
+- Zależności: `lucide-react` 1.72.0, `sonner` 2.0.8, `@fontsource-variable/inter` 5.3.0.
+- Testy: web 172 → 219.
+
+### Zmieniono (M2e)
+- Strony `/boards`, `/boards/:boardId`, `/login`, `/register` i kolumna tablicy w nowym wyglądzie; komunikaty ze store i nieudana zmiana nazwy jako toasty.
+- Przeciąganie kolumny za osobny uchwyt (dostępność); czerwony tekst używa `--destructive` (kontrast AA).
+- Fragment aplikacji po budowaniu: 711 → 827 kB.
+
+### Dodano (M2d)
+- Frontend tablic (WF-BOARD-01..03): strona `/boards` (lista z rolą użytkownika, tworzenie, zmiana nazwy, usuwanie z potwierdzeniem) i okno członków (dodanie po e-mailu, zmiana roli, usunięcie, opuszczenie tablicy).
+- Frontend kolumn (WF-COL-01..04): strona `/boards/:boardId` z kolumnami poziomo, dodawaniem, zmianą nazwy w miejscu, usuwaniem, przeciąganiem (`@hello-pangea/dnd`), kategorią, licznikiem limitu WIP (czerwony po przekroczeniu) i oknem ustawień.
+- `useBoardStore` z optymistycznym przenoszeniem kolumn, częściowym wycofaniem przy błędzie i wykrywaniem rebalansowania przez porównanie `rank`.
+- Komponenty UI: `dialog`, `alert-dialog`, `badge`, `checkbox`, `native-select`.
+- Testy: web 77 → 172 (shared 368, api 342).
+
+### Zmieniono (M2d)
+- `/` przekierowuje do `/boards` (`HOME_PATH`); nagłówek ma link do listy tablic.
+- Usunięto `HomePage` i `useApiHealth` (strona stanu API).
+
 ### Zmieniono
 - `error-handler` mapuje `RankError` na odpowiedzi HTTP: `INVALID_RANK` i `INVALID_ARGUMENT` → 400, `INVALID_RANK_ORDER` → 409.
 - `POST /boards` tworzy tablicę razem z domyślnymi kolumnami.

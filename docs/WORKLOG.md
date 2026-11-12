@@ -2,6 +2,25 @@
 
 Najnowsze wpisy na górze.
 
+## 2026-11-12 — Nazar — M2e: przebudowa interfejsu wg DESIGN
+- `apps/web`: `index.css` (tokeny, cienie, narzędzia Tailwind, Inter), `index.html` (skrypt motywu), `lib/theme.ts`, `lib/avatar.ts`, `stores/theme.ts`, `hooks/useMediaQuery.ts`, `components/layout/` (`AppHeader`, `AppToaster`, `Breadcrumbs`, `Logo`, `ShortcutsDialog`, `ThemeSwitcher`, zmieniony `AppLayout`), `components/ui/` (`avatar`, `dropdown-menu`, `skeleton`, `sonner`, zmienione `button` i inne), `features/boards/` (m.in. `BoardSidebar`, `BoardColumn`, `BoardsPage`, `BoardPage`), `features/auth/` (`AuthCard`, `AuthField`, strony), testy; zależności w `apps/web/package.json` i `pnpm-lock.yaml`.
+- Bez zmian logiki, API, bazy i zmiennych środowiskowych.
+- Testy: web 172 → 219. `lint`, `typecheck`, `test`, `build`, `format:check` przechodzą; fragment 711 → 827 kB.
+- Przegląd kodu: 2 rundy, zatwierdzone.
+- Dokumentacja: ADR-038–042, DESIGN (§2 uchwyt, §6 `--destructive`), PROJECT_STATE, CHANGELOG, notatki do rozdz. 3–5. Nie sprawdzono w prawdziwej przeglądarce. Zmiany niezacommitowane.
+
+## 2026-11-12 — Nazar — Poprawka: API nie startowało w `pnpm dev`
+- Objaw: rejestracja/logowanie w przeglądarce kończyły się „Something went wrong”; proxy Vite zgłaszało `ECONNREFUSED` na `:4000`, a API nie wypisywało nic.
+- Przyczyna: `tsx watch` (4.23.15, Windows) zawiesza się przed startem serwera, gdy stdin jest otwartym potokiem — tak uruchamia skrypty `pnpm -r --parallel --stream dev`. Bez trybu watch (i przy `pnpm --filter @streamline/api dev`) API startuje poprawnie.
+- Zmiana: skrypt `dev` w `apps/api/package.json` używa wbudowanego trybu watch Node 24: `node --watch --import tsx --conditions=@streamline/source src/server.ts`. Sprawdzone: start przez `pnpm -r --parallel --stream`, `GET /health` = 200, restart po zmianie pliku w `packages/shared`.
+
+## 2026-11-12 — Nazar — M2d: frontend tablic i kolumn
+- `apps/web`: `src/stores/board.ts` (`useBoardStore`), `src/features/boards/` (`BoardsPage`, `BoardPage`, `BoardColumns`, `BoardColumn`, `ColumnTitleEditor`, `AddColumnForm`, `ColumnSettingsDialog`, `MembersDialog`, `ConfirmDialog`, `badges.tsx`, `columnOrder.ts`, `columnDrag.ts`, `columnSettings.ts`, `boardErrorMessage.ts`, `boardsApi.ts`, `columnsApi.ts`, `labels.ts`, `paths.ts`), nowe komponenty `components/ui/` (`dialog`, `alert-dialog`, `badge`, `checkbox`, `native-select`).
+- Zmienione: `routes.tsx` (`/boards`, `/boards/:boardId`, `/` → `/boards`), `AppLayout.tsx`, `features/auth/redirect.ts` (`HOME_PATH`) i testy auth, `test/fixtures.ts`, `test/renderApp.tsx`, `test/setup.ts` (stub `ResizeObserver`). Usunięto `pages/HomePage.tsx`, `pages/HomePage.test.tsx`, `hooks/useApiHealth.ts`.
+- Testy: web 77 → 172 (shared 368, api 342). `lint`, `typecheck`, `format:check`, `build` przechodzą.
+- Przegląd kodu: 1 runda, zatwierdzone; uwagi drobne 1–5 poprawione. Uwaga 6 (fragment 537 → 711 kB, rozważyć `lazy()` dla `BoardPage`) pozostaje długiem technicznym.
+- Dokumentacja: ADR-034–037, ARCHITECTURE, PROJECT_STATE (M2c oznaczone jako zmergowane, PR #8), notatki do rozdz. 3–5. Zmiany niezacommitowane.
+
 ## 2026-11-11 — Nazar — M2c: kolumny tablicy (backend)
 - Prisma: `Column`, enum `ColumnCategory`; migracja `20261111151836_columns` z ręcznym SQL (`rank TEXT COLLATE "C"`, `UNIQUE (boardId, rank) DEFERRABLE INITIALLY IMMEDIATE`).
 - `packages/shared`: `schemas/column.ts` (schematy, `COLUMN_ERROR_CODES`, `DEFAULT_BOARD_COLUMNS`) i testy `column.test.ts`; eksport w `index.ts`.

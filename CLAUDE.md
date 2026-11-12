@@ -26,6 +26,7 @@ over through git and the `docs/` folder.
 1. Read `docs/PROJECT_STATE.md` — what is done, in progress, next.
    Scope, roles/permissions matrix and requirement IDs: `docs/REQUIREMENTS.md`.
 2. Architecture questions: `docs/ARCHITECTURE.md`, `docs/DECISIONS.md`, `docs/TECH_STACK.md`.
+   **Any UI work must follow `docs/DESIGN.md`** (layout, tokens, components, themes).
 3. Agent workflow: `.claude/AI_WORKFLOW.md`. Human process: `docs/WORKFLOW.md`.
 
 ## Stack (details in docs/TECH_STACK.md)
@@ -36,6 +37,7 @@ over through git and the `docs/` folder.
 
 ## Languages
 - Code, identifiers, code comments, commit messages, branch names: **English**.
+- **User-facing UI text in the app** (labels, buttons, messages, errors): **English**.
 - Everything in `docs/` and `README.md` (including `docs/thesis-notes/`): **Polish**.
 - Talk to the user in the language they write in (usually Ukrainian).
 
