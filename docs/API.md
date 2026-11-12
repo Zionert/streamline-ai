@@ -1,6 +1,6 @@
 # API
 
-Stan: M2c — `GET /health`, uwierzytelnianie (`/auth/*`), tablice i członkowie (`/boards/*`) oraz kolumny (`/boards/:boardId/columns`). Kolejne endpointy dochodzą z funkcjonalnościami.
+Stan: M3a — `GET /health`, uwierzytelnianie (`/auth/*`), tablice i członkowie (`/boards/*`), kolumny (`/boards/:boardId/columns`) oraz karty (`/boards/:boardId/cards`). Kolejne endpointy dochodzą z funkcjonalnościami.
 
 ## Konwencje
 - Ścieżki w tym dokumencie są podane względem korzenia API (np. `/auth/login`). Przeglądarka używa prefiksu `/api` (np. `/api/auth/login`) — serwer Vite przekazuje `/api` do API (`VITE_API_PROXY_TARGET`) i usuwa prefiks.
@@ -117,7 +117,7 @@ Role: `OWNER`, `ADMIN`, `MEMBER`, `VIEWER`. Macierz akcji (`BOARD_PERMISSIONS`):
 | `column:write`, `card:write`, `ai:use` | tak | tak | tak | nie |
 | `board:delete`, `board:transfer` | tak | nie | nie | nie |
 
-Akcje `column:write` i `column:settings` mają endpointy od M2c (sekcja „Kolumny”). Akcje `card:write`, `ai:use` i `board:transfer` są zdefiniowane, ale nie mają jeszcze endpointów.
+Akcje `column:write` i `column:settings` mają endpointy od M2c (sekcja „Kolumny”). Akcja `card:write` ma endpointy od M3a (sekcja „Karty”). Akcje `ai:use` i `board:transfer` są zdefiniowane, ale nie mają jeszcze endpointów.
 
 ### Zasady dostępu i kody błędów
 - Użytkownik niebędący członkiem tablicy dostaje 404 `NOT_FOUND` („Board not found”) — identycznie jak dla nieistniejącej tablicy (nie ujawniamy istnienia; ADR-026).
@@ -134,9 +134,11 @@ Akcje `column:write` i `column:settings` mają endpointy od M2c (sekcja „Kolum
 | 404 | `USER_NOT_FOUND` | brak konta o podanym e-mailu (dodawanie członka) |
 | 409 | `ALREADY_MEMBER` | użytkownik już należy do tablicy (także przy równoległych żądaniach) |
 | 409 | `OWNER_CANNOT_LEAVE` | właściciel próbuje opuścić tablicę |
+| 409 | `BOARD_KEY_TAKEN` | inna tablica tego samego właściciela ma już podany klucz (`PATCH /boards/:boardId`) lub nie udało się wybrać wolnego klucza przy tworzeniu (równoległe żądania) |
+| 503 | `BOARD_BUSY` | usunięcie członka nie uzyskało blokad w limicie czasu (jak dla kolumn, ADR-033) |
 
 ### Obiekty odpowiedzi
-- `Board`: `{ id, name, createdAt, updatedAt, role }` — `role` to rola wywołującego.
+- `Board`: `{ id, name, key, createdAt, updatedAt, role }` — `role` to rola wywołującego; `key` to prefiks kluczy kart (2–5 wielkich liter, np. `SL`), unikalny w obrębie właściciela tablicy.
 - `BoardMember`: `{ userId, name, email, role, joinedAt }`.
 
 ### GET /boards
@@ -144,7 +146,7 @@ Akcje `column:write` i `column:settings` mają endpointy od M2c (sekcja „Kolum
 
 ### POST /boards
 - Uprawnienia: zalogowany. Ciało (`createBoardSchema`): `name` (przycinane, 1–100 znaków).
-- Odpowiedź 201: `{ "board": Board }` z `role: "OWNER"`; twórca zostaje właścicielem.
+- Odpowiedź 201: `{ "board": Board }` z `role: "OWNER"`; twórca zostaje właścicielem. Klucz tablicy jest generowany z nazwy (inicjały słów; jedno słowo — dwie pierwsze litery; polskie i cyrylickie litery są transliterowane; `BRD` bez liter; przy zajętym kluczu następny kandydat, ADR-046). Przykłady: `StreamLine Sprint` → `SS`, `Roadmap` → `RO`, `42` → `BRD`.
 - Błędy: 400, 401.
 ```bash
 curl -X POST http://localhost:4000/boards -H "Authorization: Bearer $TOKEN" \
@@ -155,8 +157,12 @@ curl -X POST http://localhost:4000/boards -H "Authorization: Bearer $TOKEN" \
 - Uprawnienia: `board:view` (każdy członek). Odpowiedź 200: `{ "board": Board }`. Błędy: 401, 404.
 
 ### PATCH /boards/:boardId
-- Uprawnienia: `board:rename` (OWNER, ADMIN). Ciało (`updateBoardSchema`): `name` (1–100 znaków).
-- Odpowiedź 200: `{ "board": Board }`. Błędy: 400, 401, 403, 404.
+- Uprawnienia: `board:rename` (OWNER, ADMIN). Ciało (`updateBoardSchema`, ścisłe): `name` (1–100 znaków) i/lub `key` (przycinany i zamieniany na wielkie litery, 2–5 liter A–Z); co najmniej jedno pole. Zmiana klucza zmienia klucze wszystkich kart tablicy (numery zostają); dotychczasowe klucze kart przestają działać (404).
+- Odpowiedź 200: `{ "board": Board }`. Błędy: 400, 401, 403, 404, 409 `BOARD_KEY_TAKEN`.
+```bash
+curl -X PATCH http://localhost:4000/boards/$BOARD_ID -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"key":"SL"}'
+```
 
 ### DELETE /boards/:boardId
 - Uprawnienia: `board:delete` (OWNER). Odpowiedź 204 bez ciała; członkostwa są usuwane kaskadowo. Błędy: 401, 403, 404.
@@ -180,8 +186,8 @@ curl -X POST http://localhost:4000/boards/$BOARD_ID/members -H "Authorization: B
 
 ### DELETE /boards/:boardId/members/:userId
 - Uprawnienia: każdy członek (`board:view`) w przypadku usunięcia siebie (opuszczenie tablicy); usunięcie innej osoby wymaga `members:manage`.
-- Odpowiedź 204 bez ciała.
-- Błędy: 401, 403 (usunięcie innej osoby bez uprawnień lub usunięcie `OWNER`), 404, 409 `OWNER_CANNOT_LEAVE` (właściciel usuwa siebie).
+- Odpowiedź 204 bez ciała. Usunięcie członka odpina go od przypisanych kart tablicy w tej samej transakcji (`assigneeId` = `null`, ADR-045).
+- Błędy: 401, 403 (usunięcie innej osoby bez uprawnień lub usunięcie `OWNER`), 404, 409 `OWNER_CANNOT_LEAVE` (właściciel usuwa siebie), 503 `BOARD_BUSY`.
 
 ### Middleware `requireBoardPermission`
 `requireBoardPermission(action, { param })` (domyślnie `param = 'boardId'`) działa po `requireAuth`: wczytuje członkostwo wywołującego, zwraca 404 dla nie-członka i 403 przy braku uprawnienia, a członkostwo zapisuje w `res.locals.boardMembership` (odczyt: `getBoardMembership(res)`). Trasy zagnieżdżone wymagają `Router({ mergeParams: true })`. Serwis dodatkowo sprawdza uprawnienia samodzielnie (ADR-025).
@@ -193,7 +199,7 @@ Implementacja: `apps/api/src/routes/column.routes.ts` (montowane w `board.routes
 ### Obiekt `Column`
 `{ id, boardId, title, rank, category, wipLimit, wipStrict, createdAt, updatedAt }`:
 - `rank` — klucz porządkujący (LexoRank, `packages/shared/src/rank/`); porównywać przez `<`, nigdy `localeCompare`. Klient nie wysyła klucza — serwer liczy go z zapisanych sąsiadów.
-- `category` — `BACKLOG` | `TODO` | `IN_PROGRESS` | `DONE`; `wipLimit` — liczba całkowita 1–999 albo `null` (brak limitu); `wipStrict` — `true`: limit blokuje dodawanie kart, `false`: tylko ostrzega (egzekwowanie dopiero z kartami, M3).
+- `category` — `BACKLOG` | `TODO` | `IN_PROGRESS` | `DONE`; `wipLimit` — liczba całkowita 1–999 albo `null` (brak limitu); `wipStrict` — `true`: limit blokuje dodawanie kart do pełnej kolumny (409 `WIP_LIMIT_EXCEEDED` przy tworzeniu i przenoszeniu karty, ADR-044), `false`: tylko ostrzega.
 - `title` — przycinany, 1–100 znaków.
 
 ### Pozycja względem sąsiadów (`afterId`, `beforeId`)
@@ -216,6 +222,7 @@ Dotyczy `POST` i `PATCH .../move`. `afterId` to kolumna, która ma BEZPOŚREDNIO
 | 409 | `INVALID_POSITION` | `afterId` i `beforeId` nie są przyległe (nieaktualny widok) |
 | 409 | `RANK_CONFLICT` | 5 prób przypisania klucza zakończyło się kolizją przy równoległych zmianach; żądanie można ponowić |
 | 409 | `LAST_DONE_COLUMN` | usunięcie lub zmiana kategorii ostatniej kolumny `DONE` |
+| 409 | `COLUMN_NOT_EMPTY` | usunięcie kolumny, w której są karty (najpierw przenieść lub usunąć karty; ADR-047) |
 | 409 | `INVALID_RANK_ORDER` | `RankError`: niemożliwa kolejność kluczy |
 | 503 | `BOARD_BUSY` | transakcja zapisu kolumn nie uzyskała blokad lub połączenia w limicie czasu (`lock_timeout` 2 s, `maxWait` 2 s, `timeout` 5 s; ADR-033); serwer nie ponawia, klient może ponowić żądanie po chwili. Dotyczy tworzenia, przeniesienia, zmiany ustawień i usunięcia; zmiana nazwy nie używa transakcji. Bez nagłówka `Retry-After` |
 
@@ -249,11 +256,80 @@ curl -X PATCH http://localhost:4000/boards/$BOARD_ID/columns/$COLUMN_ID/move -H 
 - Błędy: 400, 401, 403, 404, 409.
 
 ### DELETE /boards/:boardId/columns/:columnId
-- Uprawnienia: `column:write`. Odpowiedź 204 bez ciała. Usunięcie ostatniej kolumny `DONE`: 409 `LAST_DONE_COLUMN`. Inwariant „co najmniej jedna kolumna `DONE`” jest chroniony blokadą wyłączną wiersza tablicy (ADR-029), więc równoległe usunięcia dwóch kolumn `DONE` nie usuną obu.
+- Uprawnienia: `column:write`. Odpowiedź 204 bez ciała. Usunięcie ostatniej kolumny `DONE`: 409 `LAST_DONE_COLUMN`; kolumna z kartami: 409 `COLUMN_NOT_EMPTY`. Inwariant „co najmniej jedna kolumna `DONE`” jest chroniony blokadą wyłączną wiersza tablicy (ADR-029), więc równoległe usunięcia dwóch kolumn `DONE` nie usuną obu.
 - Błędy: 401, 403, 404, 409.
 
 ### Domyślne kolumny
 `POST /boards` tworzy w tej samej transakcji 4 kolumny: Backlog (`BACKLOG`), To Do (`TODO`), In Progress (`IN_PROGRESS`), Done (`DONE`) z równomiernie rozłożonymi kluczami. Tablice utworzone przed M2c nie są uzupełniane.
 
+## Karty (`/boards/:boardId/cards`)
+
+Implementacja: `apps/api/src/routes/card.routes.ts` (montowane w `board.routes.ts`, `Router({ mergeParams: true })`), `controllers/card.controller.ts`, `services/card.service.ts`, `repositories/card.repository.ts`. Schematy i kody błędów: `packages/shared/src/schemas/card.ts`. Wszystkie trasy wymagają access tokena i członkostwa w tablicy (nie-członek: 404 `NOT_FOUND`, brak roli: 403 `FORBIDDEN`; rola jest sprawdzana przed walidacją ciała). Odczyt wymaga `board:view` (każdy członek, także `VIEWER`), zapis `card:write` (OWNER, ADMIN, MEMBER). Ciała żądań są ścisłe (`strictObject`): nieznane pola dają 400 `VALIDATION_ERROR`. Karta należy do tablicy z URL: `cardId` z innej tablicy daje 404 `NOT_FOUND`.
+
+### Obiekt `Card`
+`{ id, key, number, boardId, columnId, title, description, rank, priority, assigneeId, dueDate, createdAt, updatedAt }`:
+- `key` — `<klucz tablicy>-<numer>`, np. `SL-12`; składany przy odczycie z aktualnego klucza tablicy; `number` — kolejny numer w tablicy, nigdy niepowtarzany (ADR-043, ADR-046),
+- `title` — przycinany, 1–200 znaków; `description` — przycinany, do 10 000 znaków; pusty lub złożony z samych spacji zapisywany jako `null`,
+- `priority` — `LOW` | `MEDIUM` | `HIGH` | `URGENT` (domyślnie `MEDIUM`),
+- `assigneeId` — id członka tablicy lub `null`; `dueDate` — data kalendarzowa `YYYY-MM-DD` (bez godziny i strefy) lub `null`,
+- `rank` — klucz porządkujący w obrębie kolumny (LexoRank); porównywać przez `<`, nigdy `localeCompare`; klient go nie wysyła.
+
+W `PATCH` i `POST`: `null` czyści opis, osobę i termin; pole pominięte pozostaje bez zmian (`PATCH`) lub dostaje wartość domyślną (`POST`).
+
+### Pozycja karty (`afterId`, `beforeId`)
+Dotyczy `PATCH .../move` (nowa karta zawsze trafia na koniec kolumny). Zasady jak dla kolumn („Pozycja względem sąsiadów”), z tą różnicą, że sąsiadami są karty KOLUMNY DOCELOWEJ: `afterId` poprzedza przenoszoną kartę (`null` = góra kolumny), `beforeId` po niej następuje (`null` = dół); bez sąsiadów karta trafia na dół kolumny. Nieprzyległa para: 409 `INVALID_POSITION` (odświeżyć listę); sąsiad spoza kolumny docelowej: 404 `NEIGHBOR_NOT_FOUND`; karta jako własny sąsiad: 400. Przeniesienie na bieżącą pozycję nic nie zapisuje.
+
+### Kody błędów kart
+| Status | `error.code` | Kiedy |
+|---|---|---|
+| 400 | `VALIDATION_ERROR` | nieprawidłowe ciało lub parametr (m.in. brak pól w `PATCH`, nieznane pole, zła data, `afterId` = `beforeId`, karta jako własny sąsiad); niepoprawny format klucza w `GET /:cardKey` (np. `sl12`, `S-1`, `SL-0`, numer powyżej 2 147 483 647) |
+| 400 | `ASSIGNEE_NOT_MEMBER` | `assigneeId` nie jest członkiem tej tablicy |
+| 401 | `UNAUTHORIZED` | brak/nieprawidłowy access token |
+| 403 | `FORBIDDEN` | rola nie pozwala (`card:write` nie ma `VIEWER`) |
+| 404 | `NOT_FOUND` | tablica nie istnieje lub brak członkostwa; karta nie należy do tablicy; klucz karty z innym prefiksem niż aktualny klucz tablicy albo nieistniejący numer |
+| 404 | `COLUMN_NOT_FOUND` | `columnId` nie jest kolumną tej tablicy |
+| 404 | `NEIGHBOR_NOT_FOUND` | `afterId`/`beforeId` nie jest kartą kolumny docelowej |
+| 409 | `INVALID_POSITION` | `afterId` i `beforeId` nie są przyległe (nieaktualny widok) |
+| 409 | `RANK_CONFLICT` | 5 prób przypisania klucza zakończyło się kolizją przy równoległych zmianach; żądanie można ponowić |
+| 409 | `WIP_LIMIT_EXCEEDED` | kolumna docelowa ma ścisły limit WIP i jest pełna (tworzenie lub przeniesienie do innej kolumny; zmiana kolejności w tej samej kolumnie nie sprawdza limitu) |
+| 409 | `INVALID_RANK_ORDER` | `RankError`: niemożliwa kolejność kluczy |
+| 503 | `BOARD_BUSY` | transakcja nie uzyskała blokad lub połączenia w limicie czasu (ADR-033); dotyczy też usunięcia karty i odczytu listy; klient może ponowić |
+
+### GET /boards/:boardId/cards
+- Uprawnienia: `board:view`. Odpowiedź 200: `{ "columns": [{ "columnId": string, "cards": Card[] }] }` — wszystkie kolumny tablicy (także puste) w kolejności rank, w nich karty w kolejności rank. Klucz tablicy, kolumny i karty pochodzą z jednej migawki (`REPEATABLE READ`, ADR-049). Błędy: 401, 404, 503.
+```bash
+curl http://localhost:4000/boards/$BOARD_ID/cards -H "Authorization: Bearer $TOKEN"
+```
+
+### POST /boards/:boardId/cards
+- Uprawnienia: `card:write`. Ciało (`createCardSchema`): `columnId`, `title`; opcjonalnie `description`, `priority`, `assigneeId`, `dueDate`.
+- Odpowiedź 201: `{ "card": Card }` — karta dopisana na końcu kolumny z kolejnym numerem tablicy; w tej samej transakcji zapisywane jest pierwsze `CardTransition` (`fromColumnId: null`, ADR-047).
+- Błędy: 400 (`VALIDATION_ERROR`, `ASSIGNEE_NOT_MEMBER`), 401, 403, 404 (`NOT_FOUND`, `COLUMN_NOT_FOUND`), 409 (`WIP_LIMIT_EXCEEDED`, `RANK_CONFLICT`), 503.
+```bash
+curl -X POST http://localhost:4000/boards/$BOARD_ID/cards -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"columnId":"$COLUMN_ID","title":"Fix login","priority":"HIGH","dueDate":"2026-12-01"}'
+```
+
+### GET /boards/:boardId/cards/:cardKey
+- Uprawnienia: `board:view`. `:cardKey` to klucz karty (`SL-12`). Odpowiedź 200: `{ "card": Card }`.
+- Błędy: 400 (niepoprawny format klucza), 401, 404 (prefiks inny niż aktualny klucz tablicy — stare klucze nie są przekierowywane — lub brak karty o tym numerze).
+
+### PATCH /boards/:boardId/cards/:cardId
+- Uprawnienia: `card:write`. Ciało (`updateCardSchema`): `title`, `description`, `priority`, `assigneeId`, `dueDate` (co najmniej jedno pole; `null` czyści opis, osobę i termin). Kolumna i pozycja zmieniają się tylko przez `/move`.
+- Odpowiedź 200: `{ "card": Card }`. Błędy: 400 (`VALIDATION_ERROR`, `ASSIGNEE_NOT_MEMBER`), 401, 403, 404, 503.
+
+### PATCH /boards/:boardId/cards/:cardId/move
+- Uprawnienia: `card:write`. Ciało (`moveCardSchema`): `columnId` (kolumna docelowa; może być bieżąca — zmiana kolejności), opcjonalnie `afterId` i/lub `beforeId` (zasady powyżej).
+- Odpowiedź 200: `{ "card": Card }` — tylko przenoszona karta. Jeśli nastąpiło rebalansowanie, `rank` pozostałych kart kolumny też się zmieniły, a odpowiedź ich nie zawiera — klient powinien odświeżyć listę. Przy zmianie kolumny w tej samej transakcji zapisywane jest `CardTransition` (`fromColumnId` → `toColumnId`, autor = wywołujący); zmiana kolejności w kolumnie i przeniesienie na bieżącą pozycję przejścia nie zapisują.
+- Błędy: 400, 401, 403, 404 (`NOT_FOUND`, `COLUMN_NOT_FOUND`, `NEIGHBOR_NOT_FOUND`), 409 (`INVALID_POSITION`, `RANK_CONFLICT`, `WIP_LIMIT_EXCEEDED`), 503.
+```bash
+curl -X PATCH http://localhost:4000/boards/$BOARD_ID/cards/$CARD_ID/move -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"columnId":"$DONE_ID","afterId":null}'   # na górę kolumny Done
+```
+
+### DELETE /boards/:boardId/cards/:cardId
+- Uprawnienia: `card:write`. Odpowiedź 204 bez ciała; przejścia karty są usuwane kaskadowo, numer karty nie jest ponownie używany. Błędy: 401, 403, 404, 503 `BOARD_BUSY` (karta zablokowana przez wolniejsze przeniesienie; karta zostaje).
+
 ## Zdarzenia Socket.io
-Brak zaimplementowanych zdarzeń (endpointy tablic, członków i kolumn niczego nie rozgłaszają; zdarzenie dla rebalansowania rank — do ustalenia). W `packages/shared` zdefiniowano wstępną stałą `WS_EVENTS` (`board:updated`, `column:created`, `card:moved`) oraz funkcję `boardRoom()` (pokój `board:<id>`). Nazwy są robocze i zostaną zatwierdzone razem z funkcjonalnościami.
+Brak zaimplementowanych zdarzeń (endpointy tablic, członków, kolumn i kart niczego nie rozgłaszają; zdarzenie dla rebalansowania rank kolumn i kart — do ustalenia). W `packages/shared` zdefiniowano wstępną stałą `WS_EVENTS` (`board:updated`, `column:created`, `card:moved`) oraz funkcję `boardRoom()` (pokój `board:<id>`). Nazwy są robocze i zostaną zatwierdzone razem z funkcjonalnościami.

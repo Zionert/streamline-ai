@@ -2,6 +2,16 @@
 
 Najnowsze wpisy na górze.
 
+## 2026-11-12 — Nazar — M3a: karty (backend)
+- Prisma: `Card`, `CardTransition`, enum `CardPriority`, rozszerzenie `Board` (`key`, `ownerId`, `nextCardNumber`); migracja `20261112014500_cards_and_board_keys` (ręczny SQL: `rank COLLATE "C"`, odraczalne `Card_columnId_rank_key`, blok PL/pgSQL uzupełniający klucze i właścicieli istniejących tablic, indeksy `CardTransition`).
+- API: `routes/card.routes.ts`, `controllers/card.controller.ts`, `services/card.service.ts`, `services/ranked-write.ts`, `repositories/card.repository.ts`, `repositories/board-transaction.ts`; zmienione: `board.*` (klucz, `PATCH` z `key`, odpinanie kart przy usunięciu członka), `column.*` (wspólne pomocniki, 409 `COLUMN_NOT_EMPTY`), `board-member.repository.ts`, `errors/app-error.ts` (`BadRequestError`), `app.ts`, `test/helpers.ts`.
+- `packages/shared`: `board-key.ts`, `schemas/card.ts`, `schemas/position.ts`, zmiany w `schemas/board.ts` i `schemas/column.ts`, `index.ts`.
+- Frontend: tylko poprawki kompilacji (`BoardsPage.tsx`, `test/fixtures.ts`).
+- Testy: shared 368 → 484, api 342 → 478, web 219. `lint`, `typecheck`, `test` przechodzą (testy API na prawdziwej bazie).
+- Przegląd kodu: 2 rundy, zatwierdzone. Po rundzie 1 poprawiono: spójną migawkę listy kart (`REPEATABLE READ`), indeksy `fromColumnId`/`toColumnId`, limit czasu blokad przy usunięciu karty i członka, podwójny odczyt klucza w `getByKey`, przycinanie opisu, komunikaty migracji.
+- Uwaga: migrację poprawiano w miejscu na niezmergowanej gałęzi — osoba z wcześniejszym szkicem w lokalnej bazie musi wykonać `prisma migrate reset`.
+- Dokumentacja: ADR-043–049, API, DATABASE, ARCHITECTURE, PROJECT_STATE (M2d + M2e i PR #10 oznaczone jako zmergowane), CHANGELOG, notatki do rozdz. 3–5. Zmiany niezacommitowane.
+
 ## 2026-11-12 — Nazar — M2e: przebudowa interfejsu wg DESIGN
 - `apps/web`: `index.css` (tokeny, cienie, narzędzia Tailwind, Inter), `index.html` (skrypt motywu), `lib/theme.ts`, `lib/avatar.ts`, `stores/theme.ts`, `hooks/useMediaQuery.ts`, `components/layout/` (`AppHeader`, `AppToaster`, `Breadcrumbs`, `Logo`, `ShortcutsDialog`, `ThemeSwitcher`, zmieniony `AppLayout`), `components/ui/` (`avatar`, `dropdown-menu`, `skeleton`, `sonner`, zmienione `button` i inne), `features/boards/` (m.in. `BoardSidebar`, `BoardColumn`, `BoardsPage`, `BoardPage`), `features/auth/` (`AuthCard`, `AuthField`, strony), testy; zależności w `apps/web/package.json` i `pnpm-lock.yaml`.
 - Bez zmian logiki, API, bazy i zmiennych środowiskowych.

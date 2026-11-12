@@ -105,3 +105,26 @@ WHERE c."id" = v."id" AND c."boardId" = $3
 - `BoardColumn`: licznik `(n)`/`(n / limit)`, wizualizacja przekroczenia limitu WIP, kropka kategorii, stan pusty, osobny uchwyt `GripVertical`.
 - Toasty (sonner) ze stałym `id`; `notice` czyszczone akcją `dismissNotice`.
 - Znane ograniczenie: fragment po budowaniu 827 kB (711 kB po M2d) — planowane `lazy()` dla tras.
+
+## 4.2.4 Karty: numeracja, przeniesienia, limit WIP i rejestr przejść (M3a)
+- **Schemat.** Migracja `20261112014500_cards_and_board_keys` dodaje `Card` i `CardTransition` oraz `Board.key`, `Board.ownerId`, `Board.nextCardNumber`. Jak dla kolumn, `rank` i ograniczenie unikalności są dopisane ręcznie w SQL:
+```sql
+"rank" TEXT COLLATE "C" NOT NULL,
+ALTER TABLE "Card" ADD CONSTRAINT "Card_columnId_rank_key"
+  UNIQUE ("columnId", "rank") DEFERRABLE INITIALLY IMMEDIATE;
+```
+  Klucze obce `CardTransition` do kolumn i autora mają `ON DELETE SET NULL` (z indeksami `fromColumnId`, `toColumnId`, by usunięcie kolumny nie skanowało całej tabeli), a `Card.columnId` — `NO ACTION`.
+- **Warstwy i wspólny kod.** `card.routes` → `card.controller` → `card.service` → `card.repository`. Logika wspólna z kolumnami (blokada wiersza tablicy, limity czasu, mapowanie P2002 i 55P03/P2028, ponowienia przy kolizji `rank`, rebalansowanie) została wydzielona do `repositories/board-transaction.ts` (runner transakcji z poziomem izolacji per wywołanie) i `services/ranked-write.ts`; testy kolumn pozostały bez zmian, co potwierdza zachowanie funkcjonalności (ADR-049).
+- **Numeracja kart.** Utworzenie karty to transakcja z blokadą wyłączną wiersza tablicy: zwiększenie licznika (`UPDATE ... RETURNING`), wstawienie karty i pierwszego `CardTransition`. Blokada współdzielona zakleszczałaby się na tym `UPDATE` (dwie transakcje trzymające `FOR SHARE` czekają na siebie nawzajem), stąd blokada wyłączna od początku (ADR-043). Numer wycofanej transakcji wraca do licznika, numer usuniętej karty nie jest używany ponownie.
+- **Przeniesienie.** Blokada współdzielona tablicy → blokada wiersza karty (`FOR NO KEY UPDATE`) → przy wejściu do kolumny ze ścisłym limitem blokada wiersza kolumny i dopiero potem `COUNT`:
+```ts
+if (!column.wipStrict || column.wipLimit === null) return;
+if (!(await store.lockColumn(boardId, column.id))) throw columnNotFound();
+if ((await store.countInColumn(column.id)) >= column.wipLimit) {
+  throw new ConflictError(/* ... */, CARD_ERROR_CODES.WIP_LIMIT_EXCEEDED);
+}
+```
+  Przy `READ COMMITTED` druga transakcja po uzyskaniu blokady widzi kartę zatwierdzoną przez pierwszą, więc limit nie zostaje przekroczony (ADR-044). `CardTransition` powstaje tylko przy zmianie kolumny.
+- **Spójny odczyt.** `GET /boards/:boardId/cards` wykonuje jedna transakcja `REPEATABLE READ` (klucz tablicy, kolumny, karty), by karta przeniesiona do świeżo utworzonej kolumny nie zniknęła z odpowiedzi (wada pierwszej wersji z trzema niezależnymi zapytaniami, wykryta w przeglądzie kodu).
+- **Klucz tablicy.** `generateBoardKey` / `boardKeyCandidates` / `pickBoardKey` w `packages/shared` (czysta funkcja, testowana jednostkowo), przy tworzeniu tablicy do 5 prób przy kolizji z równoległym żądaniem tego samego użytkownika (ADR-046). Dla istniejących tablic klucze uzupełnia blok PL/pgSQL w migracji (przybliżenie generatora); jego poprawność sprawdza test uruchamiający ten sam fragment SQL w wycofywanej transakcji (ADR-048).
+- **Przypisanie.** Blokada `FOR SHARE` wiersza członkostwa przed zapisem `assigneeId`; usunięcie członka usuwa członkostwo i odpina jego karty w jednej transakcji (ADR-045).

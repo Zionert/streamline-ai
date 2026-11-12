@@ -3,6 +3,23 @@
 Format: [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/).
 
 ## [Unreleased]
+### Dodano (M3a)
+- Karty, backend (WF-CARD-01, WF-CARD-03, WF-CARD-04; WF-CARD-02 — część serwerowa): modele `Card` i `CardTransition`, enum `CardPriority`, migracja `20261112014500_cards_and_board_keys`.
+- Endpointy `/boards/:boardId/cards`: lista pogrupowana w kolumny, tworzenie, odczyt po kluczu (`SL-12`), edycja, przeniesienie (`/move`, `afterId`/`beforeId`, LexoRank), usunięcie.
+- Rejestr przejść: każde utworzenie i każda zmiana kolumny zapisuje `CardTransition` w tej samej transakcji (podstawa analityki przepływu).
+- Ścisły limit WIP egzekwowany przy tworzeniu i przenoszeniu kart (409 `WIP_LIMIT_EXCEEDED`), także przy równoległych żądaniach.
+- Klucz tablicy (`Board.key`, 2–5 liter, generowany z nazwy, unikalny w obrębie właściciela), `Board.ownerId`, licznik `nextCardNumber`; `PATCH /boards/:boardId` przyjmuje `key` (409 `BOARD_KEY_TAKEN`); odpowiedzi tablic zawierają `key`.
+- Kody błędów: `COLUMN_NOT_FOUND`, `WIP_LIMIT_EXCEEDED`, `ASSIGNEE_NOT_MEMBER`, `COLUMN_NOT_EMPTY`, `BOARD_KEY_TAKEN`.
+- `packages/shared`: `board-key.ts`, `boardKeySchema`, `renameBoardSchema`, `schemas/card.ts`, `schemas/position.ts`.
+- Testy: shared 368 → 484, api 342 → 478 (w tym współbieżność, migracja uzupełniająca i runner transakcji).
+
+### Zmieniono (M3a)
+- Usunięcie kolumny z kartami jest odrzucane (409 `COLUMN_NOT_EMPTY`); ścisły limit WIP kolumny działa teraz także dla kart.
+- Usunięcie członka tablicy odpina go od kart w tej samej transakcji; usunięcie członka i karty ma limit czasu blokad (503 `BOARD_BUSY`).
+- Wspólny runner transakcji (`board-transaction.ts`) i pomocniki zapisu z `rank` (`ranked-write.ts`) dla kolumn i kart; zachowanie kolumn bez zmian.
+- Migracja uzupełnia klucze i właścicieli istniejących tablic (usuwa tablice bez członków, nadaje `OWNER` tablicom bez właściciela — liczby w logu migracji).
+- Frontend: tylko poprawki kompilacji (`renameBoardSchema`, pole `key` w fixture testowym).
+
 ### Dodano (M2e)
 - Przebudowa interfejsu `apps/web` wg systemu wizualnego: tokeny kolorów (jasny i ciemny), font Inter, ikony lucide, nowy nagłówek z menu użytkownika, pomocą ze skrótami i przełącznikiem motywu, panel boczny tablicy (zwijany, szuflada poniżej 768 px), okruszki.
 - Motyw jasny/ciemny/systemowy z zapisem w `localStorage` i bez migotania przy ładowaniu.

@@ -150,6 +150,61 @@ sequenceDiagram
 
 Rebalansowanie nigdy nie podnosi trzymanej blokady (restart próby zamiast „upgrade”), więc nie powstaje zakleszczenie. Usunięcie i zmiana ustawień biorą blokadę wyłączną, co czyni inwariant „co najmniej jedna kolumna `DONE`” odpornym na wyścigi. Tworzenie tablicy wstawia 4 domyślne kolumny w tej samej transakcji (`board.repository`: zagnieżdżony `create`). Przekroczenie limitu czasu (PostgreSQL 55P03 lub Prisma P2028) repozytorium zgłasza jako `BoardBusyError`, serwis jako `ServiceUnavailableError`, a klient dostaje 503 `BOARD_BUSY`. Zdarzenia Socket.io dla kolumn nie są jeszcze emitowane; po rebalansowaniu zmieniają się klucze wielu kolumn, a odpowiedź REST zawiera jedną.
 
+### Karty: tworzenie, przeniesienie, limit WIP i kolejność blokad (M3a, ADR-043–045, ADR-049)
+
+Trasy `/boards/:boardId/cards` (`createCardRouter`, `mergeParams`) używają tego samego `requireBoardPermission` i wspólnych pomocników zapisu z `rank` (`services/ranked-write.ts`) oraz runnera transakcji (`repositories/board-transaction.ts`) co kolumny. `card.service` liczy `rank` na serwerze z sąsiadów KOLUMNY DOCELOWEJ, a klucz karty (`SL-12`) składa przy odczycie z `Board.key` i `Card.number`. Stała kolejność blokad: **wiersz tablicy → wiersz karty → wiersz kolumny** (członkostwo, jeśli potrzebne, przed kartą). Transakcje zaczynają od `lock_timeout` 2 s, więc przeciążenie daje 503 `BOARD_BUSY`.
+
+- **Utworzenie**: blokada wyłączna tablicy (`FOR NO KEY UPDATE`), bo numer pochodzi z `UPDATE ... RETURNING` licznika `nextCardNumber` (blokada współdzielona zakleszczałaby się na tym `UPDATE`).
+- **Przeniesienie**: blokada współdzielona tablicy (równoległe przeniesienia różnych kart), następnie blokada wiersza karty i, gdy karta wchodzi do kolumny ze ścisłym WIP, blokada wiersza kolumny przed `COUNT`. Za długi `rank` → restart próby z blokadą wyłączną i rebalansowanie kolumny (jak w ADR-030).
+- **Zmiana ustawień kolumny i usunięcie kolumny**: blokada wyłączna tablicy, więc przy trzymanej blokadzie współdzielonej limit WIP jest stabilny, a niepusta kolumna nie zniknie w trakcie dodawania karty.
+- **Przypisanie osoby**: blokada `FOR SHARE` wiersza członkostwa; usunięcie członka usuwa członkostwo i odpina jego karty w jednej transakcji.
+
+```mermaid
+sequenceDiagram
+  participant C as Klient
+  participant S as CardService
+  participant D as PostgreSQL
+  C->>S: PATCH /boards/:id/cards/:cardId/move {columnId, afterId, beforeId}
+  loop do 5 prób, każda we własnej transakcji
+    S->>D: BEGIN; lock_timeout; SELECT Board FOR SHARE
+    S->>D: SELECT Card FOR NO KEY UPDATE (zakres: boardId)
+    S->>D: kolumna docelowa; karty kolumny (ORDER BY rank)
+    S->>S: indeks wstawienia (resolveInsertIndex)
+    alt ta sama pozycja
+      S->>D: COMMIT (bez zapisu i bez przejścia)
+    else kolumna docelowa ze ścisłym WIP i zmiana kolumny
+      S->>D: SELECT Column FOR NO KEY UPDATE; COUNT kart
+      alt liczba >= wipLimit
+        S-->>C: 409 WIP_LIMIT_EXCEEDED (ROLLBACK)
+      end
+    end
+    S->>S: rankBetween(poprzedni, następny)
+    alt klucz za długi, blokada współdzielona
+      S->>D: ROLLBACK; próba z blokadą wyłączną
+    else klucz za długi, blokada wyłączna
+      S->>D: UPDATE Card ... FROM unnest (rebalansowanie)
+    end
+    S->>D: UPDATE Card SET columnId, rank
+    opt zmiana kolumny
+      S->>D: INSERT CardTransition (from, to, movedBy)
+    end
+    alt kolizja Card_columnId_rank_key (P2002)
+      D-->>S: błąd; ROLLBACK; kolejna próba (łagodniejsze sprawdzanie sąsiadów)
+    else
+      S->>D: COMMIT
+    end
+  end
+  S-->>C: 200 {card}, 409 RANK_CONFLICT po 5 próbach lub 503 BOARD_BUSY
+```
+
+Odczyt listy (`GET .../cards`) wykonuje jedna transakcja `REPEATABLE READ` (klucz tablicy, kolumny, karty), więc karta nigdy nie wskazuje kolumny spoza listy. `PATCH` i `DELETE` karty nie biorą blokady tablicy (nie zmieniają `rank` ani liczby kart w kolumnie); usunięcie przechodzi przez runner transakcji (`lock_timeout`). Transakcje kart są zbudowane z tych samych elementów co kolumn: `createBoardTransactionRunner` z opcjonalnym ograniczeniem rank (`Card_columnId_rank_key`), `withRankRetry`, `busyToServiceUnavailable`.
+
+Zdarzenia Socket.io dla kart nie są jeszcze emitowane (planowane po zapisie: `UI → REST → baza → zdarzenie do pokoju board:<id> → pozostali klienci`). Dane dla analityki przepływu powstają od razu: każde wejście karty do kolumny zapisuje wiersz `CardTransition` w tej samej transakcji co zmiana `columnId`.
+
+### Klucz tablicy i klucz karty (M3a, ADR-046)
+
+`board.service.create` pobiera klucze tablic właściciela (`listKeysForOwner`) i wybiera pierwszego wolnego kandydata z `boardKeyCandidates(name)` (`packages/shared/src/board-key.ts`); jeśli równoległe żądanie tego samego użytkownika zajęło klucz (naruszenie `Board_ownerId_key_key`), próbuje następnego (do 5 razy, potem 409 `BOARD_KEY_TAKEN`). `PATCH /boards/:boardId` zmienia nazwę i/lub klucz. Klucz karty nie jest zapisywany — składa go `formatCardKey(Board.key, Card.number)`, więc zmiana klucza tablicy zmienia klucze kart bez migracji danych, a `GET .../cards/:cardKey` z nieaktualnym prefiksem daje 404.
+
 Docelowy przepływ (ADR-003): UI → REST → baza → zdarzenie Socket.io do pokoju `board:<id>` → pozostali klienci.
 
 ### Przeniesienie kolumny w kliencie (M2d, ADR-034, ADR-035)
