@@ -24,12 +24,12 @@ Moduł `src/rank/` (M2a, ADR-022–024): `keys.ts` (alfabet, `isValidRank`, `Ran
 
 ### apps/web
 Tailwind 4 (`@tailwindcss/vite`), shadcn/ui (new-york, neutral; `input`, `label`, `card` pisane ręcznie w tym samym stylu). Serwer deweloperski Vite przekazuje `/api` do API.
-- `routes.tsx` — drzewo tras: `AuthBootstrap` (układ główny) → `GuestRoute` (`/login`, `/register`) oraz `ProtectedRoute` → `AppLayout` → `/` (przekierowanie do `/boards`), `/boards` (`BoardsPage`), `/boards/:boardId` (`BoardPage`).
+- `routes.tsx` — drzewo tras: `AuthBootstrap` (układ główny) → `GuestRoute` (`/login`, `/register`) oraz `ProtectedRoute` → `AppLayout` → `/` (przekierowanie do `/boards`), `/boards` (`BoardsPage`), `/boards/:boardId` (`BoardPage`) z zagnieżdżoną trasą `cards/:cardKey` (`CardDetailsRoute`, modal).
 - `stores/auth.ts` — Zustand: `user`, `accessToken` (tylko pamięć), `status` (`idle` | `loading` | `authenticated` | `unauthenticated`), `sessionEpoch` (zwiększany przy `clearSession`).
 - `lib/api.ts` — `createApiClient({ rotatedRetryDelayMs, sleep, adapter })` zwraca `{ api, refreshSession, waitForPendingRefresh }`; `lib/api-error.ts` — `getApiErrorInfo` (schemat `errorResponseSchema`).
 - `features/auth/` — `authApi.ts` (login, register, logout), `session.ts` (`restoreSession`), `useSessionRestore.ts`, `AuthBootstrap`, `ProtectedRoute`, `GuestRoute`, `LoginPage`, `RegisterPage`, `AuthCard`, `AuthField`, `authErrorMessage.ts`, `redirect.ts` (`getRedirectTarget` przyjmuje tylko ścieżki wewnątrz aplikacji, odrzuca `//` i `/\`).
 - `stores/board.ts` (M2d, ADR-034, ADR-035) — `useBoardStore` (Zustand): lista tablic, otwarta tablica (`board`, `columns`, `members`), `isMovingColumn`, `notice`. Liczniki generacji odrzucają spóźnione odpowiedzi (także `renameBoard`); stan jest zerowany przy zmianie `sessionEpoch` lub użytkownika w `authSlice`. Akcje: ładowanie, tworzenie, zmiana nazwy i usuwanie tablic; kolumny (tworzenie, nazwa z optymistycznym zapisem i wycofaniem, ustawienia — wysyłane tylko zmienione pola, usuwanie, `moveColumn`); członkowie (dodanie, zmiana roli, usunięcie, opuszczenie).
-- `features/boards/` (M2d): `BoardsPage` (lista, tworzenie, zmiana nazwy, usuwanie), `BoardPage` (tablica, stan 404, komunikat `BOARD_BUSY`), `BoardColumns` (poziomy `DragDropContext`/`Droppable`), `BoardColumn` (nazwa, kategoria i licznik WIP `n / limit` z `badges.tsx`, czerwony po przekroczeniu; liczba kart z propa `getCardCount`, domyślnie 0 do czasu M3), `ColumnTitleEditor` (Enter/Escape), `AddColumnForm`, `ColumnSettingsDialog`, `MembersDialog`, `ConfirmDialog`; logika czysta: `columnOrder.ts` (`compareRanks`, `sortByRank`, `reorderList`, `getMoveNeighbors`, `restoreOriginalPosition`, `rankFitsAt`), `columnDrag.ts` (`getColumnMove`), `columnSettings.ts`, `boardErrorMessage.ts`; klienty HTTP `boardsApi.ts`, `columnsApi.ts`; `labels.ts`, `paths.ts`. Kontrolki są ukrywane przez `hasBoardPermission`, `canManageMember` i `canLeaveBoard` z `shared`.
+- `features/boards/` (M2d): `BoardsPage` (lista, tworzenie, zmiana nazwy, usuwanie), `BoardPage` (tablica, stan 404, komunikat `BOARD_BUSY`), `BoardColumns` (poziomy `DragDropContext`/`Droppable`), `BoardColumn` (nazwa, kategoria i licznik WIP `n / limit` z `badges.tsx`, czerwony po przekroczeniu; liczba kart i podświetlenie WIP z propów `cards`/`visibleCards` od M3b), `ColumnTitleEditor` (Enter/Escape), `AddColumnForm`, `ColumnSettingsDialog`, `MembersDialog`, `ConfirmDialog`; logika czysta: `columnOrder.ts` (`compareRanks`, `sortByRank`, `reorderList`, `getMoveNeighbors`, `restoreOriginalPosition`, `rankFitsAt`), `columnDrag.ts` (`getColumnMove`), `columnSettings.ts`, `boardErrorMessage.ts`; klienty HTTP `boardsApi.ts`, `columnsApi.ts`; `labels.ts`, `paths.ts`. Kontrolki są ukrywane przez `hasBoardPermission`, `canManageMember` i `canLeaveBoard` z `shared`.
 - `components/ui/` — dodane: `dialog`, `alert-dialog`, `badge`, `checkbox`, `native-select` (ADR-036); `test/setup.ts` zawiera stub `ResizeObserver`.
 - `components/layout/` — `AppLayout` (nagłówek: link z nazwą aplikacji do `/boards`, nazwa użytkownika, przycisk wylogowania), `FullPageLoader`.
 - `test/` — `mockAdapter.ts` (ręczny adapter axios), `renderApp.tsx`, `fixtures.ts`.
@@ -233,6 +233,39 @@ sequenceDiagram
 ```
 
 Zdarzeń Socket.io jeszcze nie ma: zmiany innych użytkowników (w tym ról) są widoczne po ponownym załadowaniu widoku.
+
+### Karty w kliencie (M3b, ADR-050–054)
+- `stores/board.ts`: `cardsByColumn`, `cardsStatus`, `isMovingCard`, `cardsGeneration`; akcje `reloadCards`, `createCard`, `moveCard`, `updateCard`, `deleteCard`, `rememberCard`. Karty ładują się równolegle z kolumnami w `openBoard`.
+- `features/cards/`: `cardsApi`, logika czysta (`cardOrder`, `cardDrag`, `cardFilter`, `cardChanges`, `cardErrorMessage`, `cardLabels`, `format`), komponenty (`CardTile`, `CardComposer`, `CardDetailsRoute`, `CardDetailsDialog`, `priority.tsx`).
+- `BoardColumns` ma jeden `DragDropContext` z typami `COLUMN` i `CARD`; `Droppable` kart ma id `cards:<columnId>`.
+
+```mermaid
+sequenceDiagram
+  participant UI as BoardColumns (dnd)
+  participant S as useBoardStore
+  participant API as REST (cards)
+  UI->>S: moveCard (gdy nie trwa inne przeniesienie; filtr nieaktywny)
+  S->>S: cardsGeneration++, moveCardLocally, isMovingCard = true
+  S->>API: PATCH .../cards/:id/move (columnId, afterId, beforeId)
+  alt sukces
+    API-->>S: karta z nowym rank
+    S->>S: czy prev.rank < rank < next.rank?
+    opt nie (rebalansowanie)
+      S->>API: GET .../cards
+    end
+  else błąd
+    S->>S: restoreCardPosition (tylko przeniesiona karta), toast
+    opt INVALID_POSITION, NEIGHBOR_NOT_FOUND, 404
+      S->>API: GET .../cards
+    end
+    opt 404 COLUMN_NOT_FOUND
+      S->>API: GET .../columns
+    end
+  end
+  S->>S: isMovingCard = false
+```
+
+Edycja pola karty: zmiana optymistyczna, `PATCH` tylko zmienionych pól, odpowiedź scalana wyłącznie w pola, dla których to najnowsza edycja (numer kolejności per `<cardId>:<pole>`, ADR-053). Gdy w trakcie mutacji trwa ładowanie listy kart, lista jest czytana ponownie (ADR-054). Szczegóły karty: trasa zagnieżdżona w `BoardPage`, karta ze store albo `GET .../cards/:cardKey` (ADR-051). Zdarzeń Socket.io nadal brak.
 
 ## Narzędzia i CI
 ESLint (jedna konfiguracja), Prettier, Husky + lint-staged, Vitest. GitHub Actions (`.github/workflows/ci.yml`): push/PR do `main` — instalacja z zamrożonym lockfile, `prisma generate`, lint, typecheck, test, format:check, build; usługa PostgreSQL.

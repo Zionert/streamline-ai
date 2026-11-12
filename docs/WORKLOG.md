@@ -2,6 +2,14 @@
 
 Najnowsze wpisy na górze.
 
+## 2026-11-12 — Nazar — M3b: karty (frontend)
+- `apps/web`: `src/stores/board.ts` (karty, `moveCard`, `updateCard` z numerami kolejności, `reloadCards`), nowy katalog `src/features/cards/` (`cardsApi`, `cardOrder`, `cardDrag`, `cardFilter`, `cardChanges`, `cardErrorMessage`, `cardLabels`, `priority.tsx`, `format.ts`, `CardTile`, `CardComposer`, `CardDetailsRoute`, `CardDetailsDialog`), `components/ui/textarea.tsx`.
+- Zmienione: `features/boards/` (`BoardColumn`, `BoardColumns`, `BoardPage`, `boardErrorMessage.ts`, `paths.ts`), `routes.tsx` (trasa `cards/:cardKey`), `test/fixtures.ts`; nowy `test/boardLayout.ts` (sztuczny układ do testów przeciągania); testy `board.cards.test.ts`, `BoardColumn`, `BoardPage`, `BoardSidebar`, `stores/board`.
+- Testy: web 218 → 326 (shared 484, api 478). `lint`, `typecheck`, `test`, `format:check`, `build` przechodzą; fragment 827 → 849 kB. Bez nowych zależności, migracji, endpointów i zmiennych środowiskowych. Nie sprawdzono w prawdziwej przeglądarce.
+- Przegląd kodu: 2 rundy, zatwierdzone. Po rundzie 1 poprawiono: kolejność odpowiedzi przy edycji (termin zapisywany po Enter/blur, numery per pole), obsługę usuniętej kolumny (404 `COLUMN_NOT_FOUND`), ponowny odczyt listy w trakcie ładowania, usunięcie karty po 404 przy edycji, historię przy zamykaniu modalu, podwójny komunikat o błędzie pierwszego ładowania, podpowiedź o karcie ukrytej filtrem. Pozostałe drobne uwagi (nakładające się nieudane edycje, `latestCardEdits`, test historii) są w długu technicznym.
+- Stan repozytorium: M3a zmergowane (PR #11, `7195d9b`) wraz z poprawką trybu watch (PR #10); M3b niezacommitowane.
+- Dokumentacja: ADR-050–054, DESIGN (odstępstwa, filtr, szczegóły karty), ARCHITECTURE, PROJECT_STATE, CHANGELOG, notatki do rozdz. 3–5.
+
 ## 2026-11-12 — Nazar — usunięcie skrótów klawiszowych
 - Usunięto z `apps/web` okno skrótów (`ShortcutsDialog`), przycisk pomocy w `AppHeader`, podpowiedź „Press Shift + N to create a card” na stronie tablicy i styl `kbd` w `index.css`; zaktualizowano testy (web 219 → 218) i `docs/DESIGN.md`.
 

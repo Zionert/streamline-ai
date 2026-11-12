@@ -3,6 +3,18 @@
 Format: [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/).
 
 ## [Unreleased]
+### Dodano (M3b)
+- Karty w interfejsie (WF-CARD-01, WF-CARD-02, WF-CARD-04): kafelek karty (tytuł, klucz `SL-12`, priorytet, awatar osoby), prawdziwe liczniki kart i podświetlenie przekroczonego limitu WIP w kolumnach, szybkie tworzenie karty przyciskiem „+”.
+- Przeciąganie kart w kolumnie i między kolumnami (`@hello-pangea/dnd`, aktualizacja optymistyczna, wycofanie z toastem, odświeżenie po rebalansowaniu lub nieaktualnym widoku).
+- Szczegóły karty w oknie na trasie `/boards/:boardId/cards/:cardKey`: tytuł, opis, osoba, priorytet, termin, kolumna, usuwanie z potwierdzeniem, „Copy link”, Esc; tylko do odczytu bez uprawnienia `card:write`.
+- Filtr kart na pasku narzędzi: tekst oraz wielokrotny wybór członków (WF-CARD-07 — część).
+- Komunikaty dla `WIP_LIMIT_EXCEEDED`, `COLUMN_NOT_EMPTY`, `ASSIGNEE_NOT_MEMBER`, `COLUMN_NOT_FOUND`.
+- Komponent `textarea`. Testy: web 218 → 326.
+
+### Zmieniono (M3b)
+- `BoardColumn` zamiast propa `getCardCount` przyjmuje karty; liczniki pokazują sumę bez filtra, a przy aktywnym filtrze przeciąganie kart jest wyłączone.
+- Miejsce upuszczenia karty to podświetlenie listy (zamiast przerywanego prostokąta).
+- Fragment aplikacji po budowaniu: 827 → 849 kB.
 ### Usunięto
 - Skróty klawiszowe w interfejsie: okno pomocy ze skrótami w nagłówku i podpowiedź `Shift + N` na stronie tablicy.
 

@@ -3,7 +3,7 @@
 _Aktualizacja: 2026-11-12_
 
 ## W skrócie
-M0, M1a, M1b, M2a–M2e są zmergowane do `main` (M2b: PR #7, `60f9c48`; M2c: PR #8, `643afbd`; M2d + M2e: PR #9, `2a15599`), podobnie poprawka trybu watch serwera deweloperskiego (PR #10, `1f547a6`). M3a (backend kart: WF-CARD-01 ✅, WF-CARD-03 ✅, WF-CARD-04 ✅ po stronie API; WF-CARD-02 — część serwerowa ✅) jest zaimplementowany na gałęzi `feat/m3a-cards-backend` i zatwierdzony w przeglądzie kodu (2 rundy); zmiany nie są jeszcze zacommitowane. Następny etap: M3b (frontend kart).
+M0, M1a, M1b, M2a–M2e i M3a są zmergowane do `main` (M2b: PR #7, `60f9c48`; M2c: PR #8, `643afbd`; M2d + M2e: PR #9, `2a15599`; M3a: PR #11, `7195d9b`), podobnie poprawka trybu watch serwera deweloperskiego (PR #10, `1f547a6`). M3b (frontend kart: WF-CARD-01 ✅, WF-CARD-02 ✅, WF-CARD-04 ✅ także w UI; WF-CARD-07 — część: filtr po tekście i osobie) jest zaimplementowany na gałęzi `feat/m3b-cards-frontend` i zatwierdzony w przeglądzie kodu (2 rundy); zmiany nie są jeszcze zacommitowane. Następny etap: M4 (Socket.io, synchronizacja w czasie rzeczywistym) wg `docs/WORKFLOW.md`, sekcja 7.
 
 ## Gotowe
 - Dokumentacja stosu, organizacji pracy i decyzji (ADR-001–042).
@@ -64,7 +64,7 @@ M0, M1a, M1b, M2a–M2e są zmergowane do `main` (M2b: PR #7, `60f9c48`; M2c: PR
   - komunikaty: `notice` ze store i nieudana optymistyczna zmiana nazwy jako toasty sonner ze stałym id (ADR-039); błędy walidacji formularzy pozostają w treści formularza; menu rozwijane są niemodalne, a okna otwarte z menu zwracają fokus na przycisk ⋯ (`returnFocusRef`; ADR-041),
   - zaakceptowane odstępstwa od DESIGN: tekst w kolorze błędu używa `--destructive` (`#AE2E24` jasny / `#F87168` ciemny), bo `--danger` `#E34935` nie spełnia AA na bieli (ADR-042); brak opisu tablicy w panelu bocznym (brak pola w modelu); brak awatarów członków na kartach tablic (API nie zwraca danych); kropka TODO w `--primary`, BACKLOG w `--text-subtle`; w ciemnym motywie przyciski primary/destructive mają ciemny tekst,
   - testy: web 172 → 219 (motyw, awatary, `BoardColumn`, `BoardSidebar`, menu `AppHeader`, powrót fokusu, pojedynczy toast w StrictMode, stany puste, szkielety).
-- M3a (karty, backend; WF-CARD-01 ✅, WF-CARD-03 ✅, WF-CARD-04 ✅, WF-CARD-02 — część serwerowa ✅; ADR-043–049), gałąź `feat/m3a-cards-backend`, niezacommitowane:
+- M3a (karty, backend; WF-CARD-01 ✅, WF-CARD-03 ✅, WF-CARD-04 ✅, WF-CARD-02 — część serwerowa ✅; ADR-043–049; PR #11, zmergowane):
   - tablica: `key` (2–5 wielkich liter, generowany z nazwy: inicjały słów, transliteracja polskich i cyrylicznych liter, `BRD` gdy brak liter, kolejni kandydaci przy kolizji), `ownerId` (FK, `Restrict`) z `@@unique([ownerId, key])` oraz licznik `nextCardNumber`; `PATCH /boards/:boardId` przyjmuje `{ name?, key? }` (409 `BOARD_KEY_TAKEN`), odpowiedzi tablic zawierają `key`; `packages/shared`: `board-key.ts` (`generateBoardKey`, `boardKeyCandidates`, `pickBoardKey`), `boardKeySchema`, `renameBoardSchema`,
   - modele `Card` (numer unikalny na tablicę, `rank` jako `TEXT COLLATE "C"` z odraczalnym `UNIQUE (columnId, rank)`, enum `CardPriority`, `assigneeId` z `SetNull`, `dueDate` jako `DATE`) i `CardTransition` (klucze obce kolumn i autora `SetNull`; indeksy `(boardId, movedAt)`, `(cardId, movedAt)`, `fromColumnId`, `toColumnId`); migracja `20261112014500_cards_and_board_keys` z ręcznym uzupełnieniem istniejących tablic (PL/pgSQL; `docs/DATABASE.md`),
   - endpointy `/boards/:boardId/cards`: `GET` (karty pogrupowane w kolumny, jedna migawka `REPEATABLE READ`), `POST` (dopisanie na końcu kolumny; pierwsze przejście z `fromColumnId = null`), `GET /:cardKey` (np. `SL-12`), `PATCH /:cardId`, `PATCH /:cardId/move` (`columnId` + `afterId`/`beforeId`; przejście tylko przy zmianie kolumny, w tej samej transakcji), `DELETE /:cardId` — `docs/API.md`; uprawnienia `board:view` i `card:write`,
@@ -73,18 +73,26 @@ M0, M1a, M1b, M2a–M2e są zmergowane do `main` (M2b: PR #7, `60f9c48`; M2c: PR
   - refaktoryzacja: `repositories/board-transaction.ts` (runner transakcji z izolacją per wywołanie i opcjonalnym ograniczeniem rank) oraz `services/ranked-write.ts` (wspólne dla kolumn i kart: ponowienia przy kolizji, rebalansowanie, mapowanie `BOARD_BUSY`); `BadRequestError`; schematy pozycji `schemas/position.ts`; reeksporty w `column.service`/`column.repository` zachowane dla zgodności,
   - frontend: tylko poprawki kompilacji (`BoardsPage.tsx` używa `renameBoardSchema`, fixture testowy z `key`); brak nowych funkcji UI, brak zdarzeń Socket.io,
   - testy: shared 368 → 484, api 342 → 478, web 219 (bez zmian); `lint`, `typecheck`, `test` przechodzą (testy API na prawdziwej bazie).
-- Sprawdzone lokalnie (M3a): `lint`, `typecheck` i `test` — shared 484, api 478, web 219; testy API wymagają działającej bazy. (M2d + M2e wcześniej: także `format:check` i `build`.)
-- `build` web: ostrzeżenie o fragmencie 827 kB (537 kB po M1b, 711 kB po M2d).
+- M3b (karty, frontend `apps/web`; WF-CARD-01 ✅, WF-CARD-02 ✅, WF-CARD-04 ✅, WF-CARD-07 częściowo; ADR-050–054), gałąź `feat/m3b-cards-frontend`, niezacommitowane:
+  - `useBoardStore`: `cardsByColumn`, `cardsStatus`, `isMovingCard`, akcje `reloadCards`, `createCard`, `moveCard`, `updateCard`, `deleteCard`, `rememberCard`; karty ładują się równolegle z kolumnami w `openBoard` (szkielety); `cardsGeneration` odrzuca spóźnione listy; `removeMember` odpina osobę lokalnie, `deleteColumn` usuwa karty kolumny; 404 `COLUMN_NOT_FOUND` odświeża kolumny i karty,
+  - `features/cards/`: `cardsApi`, `cardOrder`, `cardDrag`, `cardFilter`, `cardChanges`, `cardErrorMessage`, `cardLabels`, `priority.tsx`, `format.ts` (Intl en-GB), `CardTile` (tytuł do 2 linii, klucz `SL-12`, flaga priorytetu, awatar 24 px), `CardComposer` (szybkie tworzenie przez „+”: Enter tworzy, Escape zamyka, pozostaje otwarty), `CardDetailsRoute` i `CardDetailsDialog` (modal na `/boards/:boardId/cards/:cardKey`: tytuł, opis, osoba, priorytet, termin, kolumna, usuwanie z potwierdzeniem, „Copy link”, Esc; tylko do odczytu bez `card:write`),
+  - `BoardColumn` pokazuje prawdziwą liczbę kart i podświetlenie przekroczonego WIP zamiast `getCardCount`; `BoardColumns`: jeden `DragDropContext` (typy `COLUMN`/`CARD`, `Droppable` `cards:<columnId>`), przeciąganie w kolumnie i między kolumnami (protokół ADR-034/035 + ADR-050); `BoardPage`: filtr po tekście i po awatarach członków (wielokrotny wybór), baner błędu kart z „Retry”, `Outlet` dla modalu; `routes.tsx` (trasa zagnieżdżona `cards/:cardKey`), `paths.ts`, `boardErrorMessage.ts` (nowe kody), `components/ui/textarea.tsx`,
+  - komunikaty dla `WIP_LIMIT_EXCEEDED`, `COLUMN_NOT_EMPTY`, `ASSIGNEE_NOT_MEMBER`; kontrolki ukryte bez `card:write`; brak skrótów klawiszowych, Socket.io, etykiet, komentarzy i asystenta AI,
+  - zaakceptowane odstępstwa od DESIGN (zapisane w `docs/DESIGN.md`): półprzezroczyste podświetlenie miejsca upuszczenia zamiast przerywanego prostokąta; ogólna ikona `SquareCheck` zamiast typu karty; kafelek bez terminu; `MEDIUM` w `--warning`, `URGENT` w `--destructive` + `ChevronsUp`; licznik kolumny = suma bez filtra, przeciąganie wyłączone przy aktywnym filtrze (ADR-052),
+  - testy: web 218 → 326 (shared 484, api 478 bez zmian); nowe zależności, migracje, endpointy i zmienne środowiskowe: brak.
+- Sprawdzone lokalnie (M3b): `lint`, `typecheck`, `test`, `format:check` i `build` — shared 484, api 478, web 326; testy API wymagają działającej bazy. Interfejsu nie sprawdzono w prawdziwej przeglądarce.
+- `build` web: ostrzeżenie o fragmencie 849 kB (537 kB po M1b, 711 kB po M2d, 827 kB po M2e).
 
 ## W toku
-- M3a oczekuje na commit i PR (commit tylko na wyraźną prośbę).
+- M3b oczekuje na commit i PR (commit tylko na wyraźną prośbę).
 
 ## Kolejne kroki
 Zakres i priorytety: `docs/REQUIREMENTS.md`; plan: `docs/WORKFLOW.md`, sekcja 7.
-1. **Zatwierdzenie M3a**: commit i PR. Migrację `20261112014500_cards_and_board_keys` poprawiano w miejscu na niezmergowanej gałęzi — kto zastosował wcześniejszą wersję lokalnie, musi zresetować bazę deweloperską (`prisma migrate reset`), inaczej Prisma zgłosi niezgodność sumy kontrolnej. Po zmergowaniu migracji nie wolno już edytować.
-2. **M3b** — frontend kart: karty w kolumnach (`getCardCount` w `BoardColumn` zastąpić prawdziwą liczbą), tworzenie/edycja/usuwanie, szczegóły karty (opis, osoba, termin, priorytet), przeciąganie z optymistyczną aktualizacją (ten sam protokół co dla kolumn: ADR-034/035; odpowiedź przeniesienia zawiera jedną kartę, więc po rebalansowaniu klient odświeża `GET .../cards`), obsługa `WIP_LIMIT_EXCEEDED`, `COLUMN_NOT_EMPTY`, `ASSIGNEE_NOT_MEMBER`, klucz karty (`SL-12`) w UI, filtr po osobie (pole filtra na stronie tablicy działa dopiero od kart).
-3. Analityka przepływu (M6) ma już dane: każde wejście karty do kolumny zapisuje `CardTransition` (ADR-020).
-4. WF-BOARD-04 (przekazanie własności): akcja `board:transfer` jest w macierzy uprawnień, ale endpointu jeszcze nie ma — do zrobienia przed możliwością opuszczenia tablicy przez właściciela. Przekazanie musi zaktualizować `Board.ownerId` razem z członkostwem `OWNER` i może zakończyć się 409 `BOARD_KEY_TAKEN` (nowy właściciel ma już tablicę o tym kluczu).
+1. **Zatwierdzenie M3b**: commit i PR.
+2. **M4** — Socket.io: zdarzenia do pokoju `board:<id>` po udanej zmianie REST (karty, kolumny, członkowie), w tym zbiorcze zdarzenie po rebalansowaniu `rank`; po tym klient przestanie wymagać przeładowania, by zobaczyć zmiany innych użytkowników. Uwaga: access token bez `iss`/`aud` — uzupełnić przed uwierzytelnianiem gniazda.
+3. Pozostałe z WF-CARD: etykiety i komentarze (WF-CARD-05), historia aktywności (WF-CARD-06), filtr po etykiecie (WF-CARD-07).
+4. Analityka przepływu (M6) ma już dane: każde wejście karty do kolumny zapisuje `CardTransition` (ADR-020).
+5. WF-BOARD-04 (przekazanie własności): akcja `board:transfer` jest w macierzy uprawnień, ale endpointu jeszcze nie ma — do zrobienia przed możliwością opuszczenia tablicy przez właściciela. Przekazanie musi zaktualizować `Board.ownerId` razem z członkostwem `OWNER` i może zakończyć się 409 `BOARD_KEY_TAKEN` (nowy właściciel ma już tablicę o tym kluczu).
 
 ### Uwagi dla kolejnych etapów
 - Żądania chronione wykonywać przez instancję `api` z `apps/web/src/lib/api.ts` (obsługuje Bearer i odświeżanie); żądań do `/auth/*` nie opakowywać własnym odświeżaniem.
@@ -107,13 +115,13 @@ Zmienne środowiskowe uwierzytelniania (`apps/api/.env.example`): `JWT_ACCESS_SE
 - Frontend: odświeżenie może rozpocząć się w trakcie `POST /auth/logout` (równoległe 401 w ciągu ok. 50 ms) i zrotować ciasteczko, zanim wylogowanie je unieważni; możliwe wzmocnienie: flaga „wylogowywanie” powodująca odrzucenie `refreshSession`.
 - Frontend: `login`/`register` nie zwiększają `sessionEpoch` — odświeżenie w toku podczas logowania mogłoby nadpisać lub wyczyścić nową sesję (w obecnym UI nieosiągalne).
 - Kody błędów (np. `REFRESH_TOKEN_ROTATED`) są zduplikowane w `apps/api` i `apps/web` — przenieść do `packages/shared`.
-- Brak podziału kodu (jeden fragment 827 kB po M2e) — `lazy()` dla tras, w pierwszej kolejności `BoardPage` (uwaga z przeglądu M2d, nierealizowana).
+- Brak podziału kodu (jeden fragment 849 kB po M3b) — `lazy()` dla tras, w pierwszej kolejności `BoardPage` (uwaga z przeglądu M2d, nierealizowana).
 - M2d: zmiany ról wprowadzone przez innych użytkowników są widoczne dopiero po przeładowaniu (do czasu Socket.io); wykrywanie rebalansowania w kliencie jest „best-effort” (ADR-035).
 - M2d: mapowanie komunikatów błędów dla auth (`authErrorMessage.ts`) i tablic (`boardErrorMessage.ts`) można ujednolicić we wspólnym helperze.
-- M2d/M2e: w przeglądarce nie sprawdzono wizualnie toastów, stanu przekroczonego limitu WIP (brak kart do M3b) ani braku migotania motywu (sprawdzono tylko, że klasa `dark` jest ustawiona po przeładowaniu); obie poprawki z przeglądu w przeglądarce nie mają testów (układ nie jest mierzalny w jsdom).
-- M2e: `components/ui/card.tsx` prawdopodobnie nieużywany — usunąć, jeśli M3 go nie potrzebuje.
+- M2d/M2e/M3b: w przeglądarce nie sprawdzono wizualnie toastów, stanu przekroczonego limitu WIP, przeciągania kart, modalu szczegółów ani braku migotania motywu (sprawdzono tylko, że klasa `dark` jest ustawiona po przeładowaniu); obie poprawki z przeglądu w przeglądarce nie mają testów (układ nie jest mierzalny w jsdom).
+- M2e/M3b: `components/ui/card.tsx` nadal nieużywany — usunąć.
 - M2e: `aria-label` na liczniku kolumny jest zbędny (testy wyszukują po nim) — uprościć przy okazji.
-- M2e: pole filtra, przełącznik awatarów i „Sort” na stronie tablicy nic nie filtrują do M3; pozycje „Analytics” i „Settings” są nieaktywne.
+- M2e/M3b: przycisk „Sort” jest wyłączony, a pozycje „Analytics” i „Settings” nieaktywne (filtr tekstowy i po osobie działają od M3b).
 - Podwójna nawigacja po zalogowaniu/wylogowaniu (nieszkodliwa).
 - Nazwy `WS_EVENTS` są robocze — do zatwierdzenia z funkcjonalnościami.
 - `error-handler` mapuje wszystkie błędy 4xx parsera ciała na `BAD_REQUEST`; brak zabezpieczenia `headersSent`.
@@ -148,6 +156,12 @@ Zmienne środowiskowe uwierzytelniania (`apps/api/.env.example`): `JWT_ACCESS_SE
 - M3a: `Board.ownerId` z `Restrict` — przy przyszłym usuwaniu kont trzeba najpierw przekazać własność lub usunąć tablice (por. uwaga M2b o kaskadzie).
 - M3a: brak deterministycznego testu wyścigu migawki `GET .../cards` (gwarancję daje `REPEATABLE READ`; test sprawdza tylko poziom izolacji).
 - M3a (kosmetyka): `let board` bez typu w `card.service.ts` (`list`) — dopisać `BoardCards | null`; pomocnicze funkcje testów kolumn można współdzielić z testami kart; reeksporty w `column.repository` i `column.service` zostały dla zgodności i można je usunąć.
+
+- M3b: `@hello-pangea/dnd` nie wspiera zagnieżdżonych kontenerów przewijania (lista kart w przewijanym rzędzie kolumn): ostrzeżenie w trybie deweloperskim i brak automatycznego przewijania tablicy podczas przeciągania karty.
+- M3b: dwie nakładające się nieudane edycje tego samego pola karty mogą zostawić na ekranie starszą wartość optymistyczną (poprawka: przywrócić pole lub `reloadCards()`; ADR-053); `latestCardEdits` nie jest czyszczony przy zmianie tablicy (dodać do `resetBoardStore`/`forgetOpenedBoard`).
+- M3b: brak testu historii przeglądarki przy zamykaniu modalu szczegółów (`navigate(-1)` a `replace`; ADR-051).
+- M3b: test przeciągania klawiaturą między kolumnami opiera się na sztucznym układzie z `apps/web/src/test/boardLayout.ts` (jsdom nie mierzy układu).
+- M3b: wykrywanie rebalansowania kart po stronie klienta jest „best-effort” (jak dla kolumn, ADR-035).
 
 ## Przeszkody / otwarte pytania
 - Nie potwierdzono przebiegu CI na GitHub (w tym `DATABASE_URL_TEST` z usługą PostgreSQL); sprawdzić tagi akcji (`checkout@v7`, `pnpm/action-setup@v6`, `setup-node@v7`) oraz działanie `DATABASE_URL_TEST` z usługą PostgreSQL.

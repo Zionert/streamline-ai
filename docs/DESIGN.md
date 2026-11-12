@@ -51,7 +51,7 @@ Daty i liczby formatowane przez `Intl` z lokalizacją `en-GB` (np. „12 Nov 202
 
 ### Strona tablicy (`/boards/:boardId`)
 - Okruszki: „Boards / {name}”; tytuł H1 „Board”.
-- Pasek narzędzi: pole „Filter cards” (szer. 200 px, ikona lupy), stos awatarów członków (max 4 + „+N”; kliknięcie filtruje karty osoby, aktywny awatar z obramowaniem `--primary`), przycisk „Sort” (styl subtle). Filtry działają od M3.
+- Pasek narzędzi: pole „Filter cards” (szer. 200 px, ikona lupy), stos awatarów członków (max 4 + „+N”; kliknięcie filtruje karty osoby, aktywny awatar z obramowaniem `--primary`), przycisk „Sort” (styl subtle). Filtry działają od M3b: tekst (tytuł lub klucz karty) i wielokrotny wybór awatarów członków; przy aktywnym filtrze przeciąganie kart jest wyłączone, a liczniki kolumn pokazują sumę bez filtra (ADR-052).
 - Kolumny w poziomym przewijanym rzędzie z odstępem 12 px.
 
 ---
@@ -82,12 +82,15 @@ Daty i liczby formatowane przez `Intl` z lokalizacją `en-GB` (np. „12 Nov 202
 - Karta „starzejąca się” (M6, WF-FLOW-04): mała ikona zegara w `--warning` z podpowiedzią „In progress for N days”.
 - Przeciąganie: cień `--shadow-raised`, obrót 2°, miejsce docelowe — przerywany prostokąt.
 
+> Odstępstwa zaakceptowane w M3b: miejsce docelowe to półprzezroczyste podświetlenie listy kart (zamiast przerywanego prostokąta); zamiast ikony typu karty ogólna `SquareCheck`; kafelek nie pokazuje terminu (termin tylko w szczegółach); etykiety — poza zakresem do M5; priorytet `MEDIUM` w `--warning`, `URGENT` w `--destructive` + `ChevronsUp`.
+
 > Wymaganie dla M3: tablica ma krótki **klucz** (np. „SL”, 2–5 wielkich liter, generowany z nazwy, edytowalny),
 > a karta — **numer kolejny w obrębie tablicy**; razem tworzą czytelny identyfikator jak w Jirze.
 
-## 4. Szczegóły karty (M3/M5)
+## 4. Szczegóły karty (M3b/M5)
 - Modal na trasie `/boards/:boardId/cards/:cardKey` (adres do udostępnienia), szerokość 900 px, animacja pojawienia.
 - Układ dwukolumnowy: lewa (65%) — tytuł edytowalny w miejscu, opis, komentarze; prawa (35%) — status (kolumna), osoba przypisana, priorytet, etykiety, termin, daty utworzenia/aktualizacji.
+- Stan w M3b: modal zawiera tytuł, opis, osobę, priorytet, termin, kolumnę, „Copy link”, „Delete” (z potwierdzeniem) i Esc; role bez `card:write` widzą wartości tylko do odczytu. Brak komentarzy, etykiet i dat utworzenia (M5).
 - Pasek akcji u góry: klucz karty, przyciski „Copy link”, „Delete”, „Close” (Esc).
 - Asystent AI (M7) jako przycisk „✨ Assistant” w pasku akcji, wyniki w panelu z akceptacją.
 
