@@ -23,7 +23,7 @@ Daty i liczby formatowane przez `Intl` z lokalizacją `en-GB` (np. „12 Nov 202
 │ [■] Name      │ Boards / Board name                                  │  ← okruszki
 │     descr… ‹  │ Board                                                │  ← tytuł H1
 │               │ [Filter cards 🔍] (A)(B)(C)(+2)  [⇅ Sort]             │  ← pasek narzędzi
-│ ▥ Board       │ Press Shift + N to create a card                     │  ← podpowiedź
+│ ▥ Board       │                                                      │
 │ 📈 Analytics  │ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐   │
 │ 👥 Members    │ │TO DO (2)+│ │IN PROG(1)│ │REVIEW   +│ │DONE     +│   │
 │ ⚙ Settings    │ │┌────────┐│ │┌────────┐│ │          │ │   ⊘      │   │
@@ -36,7 +36,7 @@ Daty i liczby formatowane przez `Intl` z lokalizacją `en-GB` (np. „12 Nov 202
 ### Pasek górny (`AppHeader`)
 - Wysokość 56 px, tło `--surface`, dolna krawędź `--border`.
 - Lewo: logo (własna ikona — romb/strzałka w kolorze `--primary`) + „StreamLine” (font 600, 18 px), link do `/boards`.
-- Prawo: przycisk pomocy (skróty klawiszowe), przełącznik motywu (jasny / ciemny / systemowy), awatar użytkownika z menu (imię, e-mail, „Log out”).
+- Prawo: przełącznik motywu (jasny / ciemny / systemowy), awatar użytkownika z menu (imię, e-mail, „Log out”).
 
 ### Panel boczny (`BoardSidebar`) — tylko na stronach tablicy
 - Szerokość 240 px, tło `--sidebar`, prawa krawędź `--border`; zwijany przyciskiem `‹` na krawędzi do 0 px (stan zapamiętany w `localStorage`).
@@ -52,7 +52,6 @@ Daty i liczby formatowane przez `Intl` z lokalizacją `en-GB` (np. „12 Nov 202
 ### Strona tablicy (`/boards/:boardId`)
 - Okruszki: „Boards / {name}”; tytuł H1 „Board”.
 - Pasek narzędzi: pole „Filter cards” (szer. 200 px, ikona lupy), stos awatarów członków (max 4 + „+N”; kliknięcie filtruje karty osoby, aktywny awatar z obramowaniem `--primary`), przycisk „Sort” (styl subtle). Filtry działają od M3.
-- Podpowiedź skrótu nad kolumnami (tekst `--text-subtle`, klawisze w ramce `kbd`).
 - Kolumny w poziomym przewijanym rzędzie z odstępem 12 px.
 
 ---
@@ -141,7 +140,7 @@ Kontrast tekstu do tła — minimum WCAG AA (WNF-05).
 - Brak migotania przy starcie: skrypt w `index.html` ustawia klasę przed renderem Reacta.
 
 ## 9. Interakcje i dostępność
-- Skróty: `Shift + N` — nowa karta (M3), `/` — fokus na filtrze, `Esc` — zamknięcie modala, `?` — lista skrótów.
+- Skróty klawiszowe: poza zakresem (zrezygnowano z nich 2026-11-12); działa tylko standardowe `Esc` zamykające okna.
 - Aktualizacje optymistyczne bez blokowania UI; błąd → toast (shadcn `sonner`) i wycofanie zmiany.
 - Komunikaty toast w prawym dolnym rogu; potwierdzenia destrukcyjne w `AlertDialog`.
 - Stan ładowania: szkielety (skeleton) kolumn i kart zamiast spinnerów na całą stronę.

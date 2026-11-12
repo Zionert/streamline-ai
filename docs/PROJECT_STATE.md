@@ -54,11 +54,11 @@ M0, M1a, M1b, M2a–M2e są zmergowane do `main` (M2b: PR #7, `60f9c48`; M2c: PR
   - nowe zależności (wersje dokładne): `lucide-react` 1.72.0, `sonner` 2.0.8, `@fontsource-variable/inter` 5.3.0,
   - `src/index.css`: wszystkie tokeny z DESIGN §6 (jasny i ciemny), `--shadow-card`/`--shadow-raised`, mapowanie na tokeny shadcn, narzędzia Tailwind (`bg-canvas`, `bg-surface`, `bg-column`, `bg-sidebar`, `text-subtle`, `bg-primary-subtle`, `bg-danger-subtle`, `shadow-card`, `shadow-raised`), zaokrąglenia 4/6/8 px, Inter z fallbackiem `system-ui`, bazowo 14 px,
   - motyw jasny/ciemny/systemowy: `src/lib/theme.ts`, `src/stores/theme.ts` (Zustand), klucz `localStorage` `streamline-theme`, skrypt w `index.html` ustawia klasę `dark` przed startem Reacta (brak migotania), tryb systemowy śledzi `prefers-color-scheme`; test sprawdza zgodność skryptu z `theme.ts` (ADR-038),
-  - `AppHeader` (własne logo SVG, pomoc → `ShortcutsDialog` ze skrótami jeszcze niepodpiętymi oznaczonymi „Soon”, `ThemeSwitcher`, menu awatara: nazwa, e-mail, „Log out”); `AppLayout` jest tylko powłoką; `Breadcrumbs`, `AppToaster` (sonner, prawy dolny róg),
+  - `AppHeader` (własne logo SVG, `ThemeSwitcher`, menu awatara: nazwa, e-mail, „Log out”); `AppLayout` jest tylko powłoką; `Breadcrumbs`, `AppToaster` (sonner, prawy dolny róg),
   - `Avatar`/`AvatarStack` (paleta 8 barw wybierana FNV-1a z id, nakładanie −8 px, maks. 4 + „+N”), `BoardIcon`, `src/lib/avatar.ts`, hook `useMediaQuery` (progi 1024 i 768 px),
   - `BoardSidebar`: 240 px, zwijany do 0 (zapis w `streamline-sidebar-collapsed`, domyślnie zwinięty poniżej 1024 px), poniżej 768 px szuflada (Radix Dialog; zamyka się przy powiększeniu okna); pozycje: Board, Analytics (Soon), Members (otwiera `MembersDialog`), Settings (tylko z `board:rename`, Soon),
   - `/boards`: okruszki, H1 „Your boards”, „Create board” otwiera okno (ten sam formularz), siatka kart `minmax(260px)`, plakietka roli, menu ⋯ (Rename/Delete), stan pusty, szkielety ładowania,
-  - `/boards/:boardId`: okruszki, H1 „Board”, pasek narzędzi (pole filtra i przełącznik awatarów członków — tylko lokalny stan, filtrowanie dopiero w M3; „Sort” wyłączony), podpowiedź Shift+N, szkielety kolumn,
+  - `/boards/:boardId`: okruszki, H1 „Board”, pasek narzędzi (pole filtra i przełącznik awatarów członków — tylko lokalny stan, filtrowanie dopiero w M3; „Sort” wyłączony), szkielety kolumn,
   - `BoardColumn` wg DESIGN §2: 280 px, nazwa wielkimi literami + licznik `(n)` / `(n / limit)`, przekroczony WIP = licznik w kolorze błędu, górna krawędź i tło `danger-subtle`; kropka kategorii; wyłączony „+” (M3); menu ⋯ (Rename/Settings/Delete); pusty stan `CircleSlash` „No cards”; przerywane „Add column”; uchwyt przeciągania to osobny `GripVertical` (ADR-040),
   - strony logowania i rejestracji wg DESIGN §5 (`AuthCard`, `AuthField` 40 px),
   - komunikaty: `notice` ze store i nieudana optymistyczna zmiana nazwy jako toasty sonner ze stałym id (ADR-039); błędy walidacji formularzy pozostają w treści formularza; menu rozwijane są niemodalne, a okna otwarte z menu zwracają fokus na przycisk ⋯ (`returnFocusRef`; ADR-041),
@@ -113,7 +113,7 @@ Zmienne środowiskowe uwierzytelniania (`apps/api/.env.example`): `JWT_ACCESS_SE
 - M2d/M2e: w przeglądarce nie sprawdzono wizualnie toastów, stanu przekroczonego limitu WIP (brak kart do M3b) ani braku migotania motywu (sprawdzono tylko, że klasa `dark` jest ustawiona po przeładowaniu); obie poprawki z przeglądu w przeglądarce nie mają testów (układ nie jest mierzalny w jsdom).
 - M2e: `components/ui/card.tsx` prawdopodobnie nieużywany — usunąć, jeśli M3 go nie potrzebuje.
 - M2e: `aria-label` na liczniku kolumny jest zbędny (testy wyszukują po nim) — uprościć przy okazji.
-- M2e: pole filtra, przełącznik awatarów i „Sort” na stronie tablicy nic nie filtrują do M3; pozycje „Analytics”, „Settings” i skróty z „Soon” są nieaktywne.
+- M2e: pole filtra, przełącznik awatarów i „Sort” na stronie tablicy nic nie filtrują do M3; pozycje „Analytics” i „Settings” są nieaktywne.
 - Podwójna nawigacja po zalogowaniu/wylogowaniu (nieszkodliwa).
 - Nazwy `WS_EVENTS` są robocze — do zatwierdzenia z funkcjonalnościami.
 - `error-handler` mapuje wszystkie błędy 4xx parsera ciała na `BAD_REQUEST`; brak zabezpieczenia `headersSent`.

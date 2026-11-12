@@ -3,6 +3,9 @@
 Format: [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/).
 
 ## [Unreleased]
+### Usunięto
+- Skróty klawiszowe w interfejsie: okno pomocy ze skrótami w nagłówku i podpowiedź `Shift + N` na stronie tablicy.
+
 ### Dodano (M3a)
 - Karty, backend (WF-CARD-01, WF-CARD-03, WF-CARD-04; WF-CARD-02 — część serwerowa): modele `Card` i `CardTransition`, enum `CardPriority`, migracja `20261112014500_cards_and_board_keys`.
 - Endpointy `/boards/:boardId/cards`: lista pogrupowana w kolumny, tworzenie, odczyt po kluczu (`SL-12`), edycja, przeniesienie (`/move`, `afterId`/`beforeId`, LexoRank), usunięcie.

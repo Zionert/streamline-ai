@@ -2,6 +2,9 @@
 
 Najnowsze wpisy na górze.
 
+## 2026-11-12 — Nazar — usunięcie skrótów klawiszowych
+- Usunięto z `apps/web` okno skrótów (`ShortcutsDialog`), przycisk pomocy w `AppHeader`, podpowiedź „Press Shift + N to create a card” na stronie tablicy i styl `kbd` w `index.css`; zaktualizowano testy (web 219 → 218) i `docs/DESIGN.md`.
+
 ## 2026-11-12 — Nazar — M3a: karty (backend)
 - Prisma: `Card`, `CardTransition`, enum `CardPriority`, rozszerzenie `Board` (`key`, `ownerId`, `nextCardNumber`); migracja `20261112014500_cards_and_board_keys` (ręczny SQL: `rank COLLATE "C"`, odraczalne `Card_columnId_rank_key`, blok PL/pgSQL uzupełniający klucze i właścicieli istniejących tablic, indeksy `CardTransition`).
 - API: `routes/card.routes.ts`, `controllers/card.controller.ts`, `services/card.service.ts`, `services/ranked-write.ts`, `repositories/card.repository.ts`, `repositories/board-transaction.ts`; zmienione: `board.*` (klucz, `PATCH` z `key`, odpinanie kart przy usunięciu członka), `column.*` (wspólne pomocniki, 409 `COLUMN_NOT_EMPTY`), `board-member.repository.ts`, `errors/app-error.ts` (`BadRequestError`), `app.ts`, `test/helpers.ts`.
